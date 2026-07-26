@@ -4,7 +4,13 @@ object EnforcementScript {
     const val WECHAT_PACKAGE = "com.tencent.mm"
     val DEFAULT_TARGET_USERS = AndroidUserSelections.DEFAULT_ENABLED_USER_IDS.sorted()
 
-    private val selfProtectionMiuiOps = listOf(10007, 10008, 10021, 10023)
+    private val selfProtectionMiuiOps = listOf(
+        MIUI_BOOT_COMPLETED_OP,
+        MIUI_AUTOSTART_OP,
+        MIUI_BACKGROUND_START_ACTIVITY_OP,
+        MIUI_SERVICE_FOREGROUND_OP,
+        MIUI_AUTOSTART_SWITCH_OP,
+    )
 
     fun build(
         policy: WechatPolicy,
@@ -99,4 +105,10 @@ object EnforcementScript {
         appendLine("  printf 'WeChat global Doze allowlist: removed\\n'")
         appendLine("fi")
     }
+
+    private const val MIUI_BOOT_COMPLETED_OP = 10007
+    private const val MIUI_AUTOSTART_OP = 10008
+    private const val MIUI_BACKGROUND_START_ACTIVITY_OP = 10021
+    private const val MIUI_SERVICE_FOREGROUND_OP = 10023
+    private const val MIUI_AUTOSTART_SWITCH_OP = 10053
 }

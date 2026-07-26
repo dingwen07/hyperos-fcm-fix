@@ -89,7 +89,6 @@ fun LogViewerScreen(
                     actions = {
                         TextButton(
                             onClick = {
-                                AppLog.i("UI/Logs", "list refreshed")
                                 refreshKey++
                             },
                         ) { Text("Refresh") }
@@ -113,7 +112,7 @@ fun LogViewerScreen(
             ) {
                 item {
                     Text(
-                        "Newest sessions first. Each file combines app, background-worker, and privileged Shizuku events. Very large files show their latest 200 KB.",
+                        "Newest sessions first. Each file combines background-worker and privileged Shizuku events. Very large files show their latest 200 KB.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp),
@@ -132,7 +131,6 @@ fun LogViewerScreen(
                         LogFileCard(
                             file = file,
                             onClick = {
-                                AppLog.i("UI/Logs", "file opened name=${file.name} bytes=${file.length()}")
                                 selectedFileName = file.name
                             },
                         )
@@ -144,7 +142,6 @@ fun LogViewerScreen(
 
     selectedFile?.let { file ->
         val closeFile = {
-            AppLog.i("UI/Logs", "file closed name=${file.name}")
             selectedFileName = null
         }
         FullScreenLogDialog(onDismiss = closeFile) {
@@ -158,7 +155,6 @@ fun LogViewerScreen(
                         actions = {
                             TextButton(
                                 onClick = {
-                                    AppLog.i("UI/Logs", "file refreshed name=${file.name}")
                                     refreshKey++
                                 },
                             ) { Text("Refresh") }
@@ -198,8 +194,7 @@ fun LogViewerScreen(
                     onClick = {
                         clearing = true
                         scope.launch {
-                            val deleted = withContext(Dispatchers.IO) { AppLog.clearSessionFiles() }
-                            AppLog.i("UI/Logs", "logs cleared deleted=$deleted")
+                            withContext(Dispatchers.IO) { AppLog.clearSessionFiles() }
                             selectedFileName = null
                             confirmClear = false
                             clearing = false

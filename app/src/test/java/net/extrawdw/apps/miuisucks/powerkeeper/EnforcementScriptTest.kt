@@ -53,6 +53,25 @@ class EnforcementScriptTest {
     }
 
     @Test
+    fun selfProtectionEnablesBothXiaomiAutostartAppOpsForOwner() {
+        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10008' allow"))
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10053' allow"))
+        assertFalse(script.contains("cmd appops set --user 999 '$applicationId' '10008' allow"))
+        assertFalse(script.contains("cmd appops set --user 999 '$applicationId' '10053' allow"))
+    }
+
+    @Test
+    fun selfProtectionEnablesXiaomiBootAndBackgroundExecutionAppOps() {
+        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10007' allow"))
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10021' allow"))
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10023' allow"))
+    }
+
+    @Test
     fun restrictedIgnoresWechatBackgroundOps() {
         val script = EnforcementScript.build(WechatPolicy.RESTRICTED, applicationId)
 

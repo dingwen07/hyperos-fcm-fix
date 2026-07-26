@@ -26,13 +26,13 @@ WorkManager remains a recovery/bootstrap fallback. A fixed 15-minute recovery jo
 
 ## Logs
 
-The in-app log viewer combines UI actions, WorkManager runs, Shizuku connection events, privileged commands, and FCM repairs into rotating session files under the owner user's app-specific external-files directory. That location is writable by both the app and Shizuku's ADB-shell identity without transferring file descriptors across SELinux domains. Open **Logs** at the bottom of the main screen to inspect selectable text, refresh an active session, or clear all sessions. Logcat entries use the `PowerKeeperFix` prefix. The app retains at most 20 sessions, rolls files at approximately 1 MB, and displays the latest 200 KB of a large session.
+The in-app log viewer combines WorkManager runs, Shizuku connection events, privileged commands, and FCM repairs into rotating session files under the owner user's app-specific external-files directory. UI interactions are not logged. That location is writable by both the app and Shizuku's ADB-shell identity without transferring file descriptors across SELinux domains. Open **Logs** at the bottom of the main screen to inspect selectable text, refresh an active session, or clear all sessions. Logcat entries use the `PowerKeeperFix` prefix. The app retains at most 20 sessions, rolls files at approximately 1 MB, and displays the latest 200 KB of a large session.
 
 ## Xiaomi-only installation
 
 The manifest requires the APK-backed `com.miui.system` shared library published by Xiaomi firmware. Android PackageManager rejects installation when this library is absent. A second runtime guard verifies Android owner user 0, the `Xiaomi` manufacturer, the shared library, and the `com.miui.system` system package before scheduling or invoking Shizuku. Secondary-user and XSpace instances remain inactive; the owner-user instance can still manage the selected Android users' WeChat policy.
 
-Xiaomi autostart gates are enabled for the app. A small manifest receiver listens only for `BOOT_COMPLETED` and the app-specific `MY_PACKAGE_REPLACED` broadcast, then restores the periodic schedule and starts an immediate recovery attempt.
+Both Xiaomi autostart AppOps are enabled for the app on owner user 0: enforcement operation `10008` and Security Center switch-state operation `10053`. Self-protection also permits Xiaomi's boot-completed (`10007`), background-activity-start (`10021`), and foreground-service (`10023`) gates. A small manifest receiver listens only for `BOOT_COMPLETED` and the app-specific `MY_PACKAGE_REPLACED` broadcast, then restores the periodic schedule and starts an immediate recovery attempt.
 
 ## Safety model
 

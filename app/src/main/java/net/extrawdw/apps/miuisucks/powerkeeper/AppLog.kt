@@ -8,7 +8,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** App-wide rotating file logger used by UI, WorkManager, and the Shizuku UserService. */
+/** Rotating file logger used by background work and the Shizuku UserService. */
 object AppLog {
     private const val TAG_PREFIX = "PowerKeeperFix"
     private const val MAX_FILES = 20

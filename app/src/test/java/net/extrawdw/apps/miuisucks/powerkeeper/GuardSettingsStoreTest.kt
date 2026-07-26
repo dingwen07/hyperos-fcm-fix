@@ -46,17 +46,19 @@ class GuardSettingsStoreTest {
     @Test
     fun hyperOsAutoUnrestrictedPackagesShareProtectedDefaults() {
         assertTrue(AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.isNotEmpty())
+        assertTrue("com.tencent.mm" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
+        assertTrue("org.telegram.messenger" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
         AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.forEach { packageName ->
             assertTrue(AppPolicyDefaults.forPackage(packageName).aurogonEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).autostartEnabled)
-            assertEquals(AppDozePolicy.OFF, AppPolicyDefaults.forPackage(packageName).dozePolicy)
+            assertEquals(AppDozePolicy.DEFAULT, AppPolicyDefaults.forPackage(packageName).dozePolicy)
             assertTrue(AppPolicyDefaults.forPackage(packageName).periodicEnforcement)
         }
 
         val other = AppPolicyDefaults.forPackage("com.example.push")
         assertFalse(other.aurogonEnabled)
         assertFalse(other.autostartEnabled)
-        assertEquals(AppDozePolicy.UNRESTRICTED, other.dozePolicy)
+        assertEquals(AppDozePolicy.OFF, other.dozePolicy)
         assertFalse(other.periodicEnforcement)
     }
 

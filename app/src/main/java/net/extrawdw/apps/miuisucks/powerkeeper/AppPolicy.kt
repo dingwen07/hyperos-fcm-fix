@@ -55,6 +55,7 @@ data class AppPolicy(
 object AppPolicyDefaults {
     val HYPEROS_AUTO_UNRESTRICTED_PACKAGES: Set<String> = setOf(
         "com.tencent.mm",
+        "org.telegram.messenger",
     )
 
     fun initialPolicies(): Map<String, AppPolicy> =
@@ -68,10 +69,10 @@ object AppPolicyDefaults {
                 aurogonManaged = true,
                 autostartEnabled = true,
                 autostartManaged = true,
-                dozePolicy = AppDozePolicy.OFF,
+                dozePolicy = AppDozePolicy.DEFAULT,
                 periodicEnforcement = true,
             )
         } else {
-            AppPolicy(packageName, dozePolicy = AppDozePolicy.UNRESTRICTED)
+            AppPolicy(packageName, dozePolicy = AppDozePolicy.OFF)
         }
 }

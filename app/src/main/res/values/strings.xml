@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Xiaomi PowerKeeper FCM Fix</string>
+    <string name="app_name">HyperOS FCM Fix</string>
     <string name="app_subtitle">Background control for HyperOS</string>
 
     <string name="unsupported_device">Unsupported device</string>
-    <string name="unsupported_device_description">This app requires the owner profile on a Xiaomi device running MIUI or HyperOS.</string>
+    <string name="unsupported_device_description">This app requires the owner profile on a Xiaomi device running HyperOS.</string>
     <string name="checking_device_compatibility">Checking device compatibility…</string>
 
     <string name="shizuku">Shizuku</string>
@@ -23,7 +23,7 @@
     <string name="apply_now">Apply now</string>
 
     <string name="android_profiles">Android profiles</string>
-    <string name="android_profiles_description">Choose which profiles receive per-app MIUI Autostart and AOSP Battery optimization changes. The owner and XSpace profiles are enabled by default.</string>
+    <string name="android_profiles_description">Choose which profiles receive per-app HyperOS Autostart and AOSP Battery optimization changes. The owner and XSpace profiles are enabled by default.</string>
     <string name="android_profiles_empty">No saved profiles yet. They will be loaded when Shizuku is connected.</string>
     <string name="android_user_id">User %1$d</string>
     <string name="refreshing">Refreshing…</string>
@@ -40,10 +40,10 @@
 
     <string name="aurogon_protection">Aurogon FCM protection</string>
     <string name="aurogon_protection_description">Wake this app when HyperOS would cache its frozen FCM broadcast.</string>
-    <string name="miui_autostart">MIUI Autostart</string>
+    <string name="miui_autostart">HyperOS Autostart</string>
     <string name="miui_autostart_description">Allow cold-start delivery using both Xiaomi Autostart AppOps.</string>
     <string name="periodic_enforcement">Periodic enforcement</string>
-    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization AppOps if MIUI overwrites them. Aurogon remains enforced independently.</string>
+    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization AppOps if HyperOS overwrites them. Aurogon remains enforced independently.</string>
     <string name="aosp_doze_policy">AOSP Battery optimization</string>
     <string name="aosp_doze_policy_description">Applied to the selected Android profiles. This is independent of the Aurogon switch.</string>
     <string name="app_doze_off">Don’t change</string>

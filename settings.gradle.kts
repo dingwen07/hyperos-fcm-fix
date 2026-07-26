@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Xiaomi PowerKeeper FCM Fix"
+rootProject.name = "HyperOS FCM Fix"
 include(":app")

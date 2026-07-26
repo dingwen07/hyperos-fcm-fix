@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">小米电量和性能 FCM 修复</string>
+    <string name="app_name">HyperOS FCM 修复</string>
     <string name="app_subtitle">HyperOS 后台管理</string>
 
     <string name="unsupported_device">设备不受支持</string>
-    <string name="unsupported_device_description">本应用需要在运行 MIUI 或 HyperOS 的小米设备上，以机主用户身份使用。</string>
+    <string name="unsupported_device_description">本应用需要在运行 HyperOS 的小米设备上，以机主用户身份使用。</string>
     <string name="checking_device_compatibility">正在检查设备兼容性…</string>
 
     <string name="shizuku">Shizuku</string>
@@ -23,7 +23,7 @@
     <string name="apply_now">立即应用</string>
 
     <string name="android_profiles">Android 用户</string>
-    <string name="android_profiles_description">选择应用 MIUI 自启动和 AOSP 电池优化设置的用户。默认启用机主和手机分身用户。</string>
+    <string name="android_profiles_description">选择应用 HyperOS 自启动和 AOSP 电池优化设置的用户。默认启用机主和手机分身用户。</string>
     <string name="android_profiles_empty">尚未保存用户。连接 Shizuku 后将自动加载。</string>
     <string name="android_user_id">用户 %1$d</string>
     <string name="refreshing">正在刷新…</string>
@@ -40,10 +40,10 @@
 
     <string name="aurogon_protection">Aurogon FCM 保护</string>
     <string name="aurogon_protection_description">当 HyperOS 准备缓存已冻结应用的 FCM 广播时唤醒此应用。</string>
-    <string name="miui_autostart">MIUI 自启动</string>
+    <string name="miui_autostart">HyperOS 自启动</string>
     <string name="miui_autostart_description">通过两个小米自启动 AppOp 允许冷启动接收消息。</string>
     <string name="periodic_enforcement">定期强制应用</string>
-    <string name="periodic_enforcement_description">当 MIUI 覆盖设置时，定期恢复此应用的自启动和 AOSP 电池优化 AppOp。Aurogon 会独立保持启用。</string>
+    <string name="periodic_enforcement_description">当 HyperOS 覆盖设置时，定期恢复此应用的自启动和 AOSP 电池优化 AppOp。Aurogon 会独立保持启用。</string>
     <string name="aosp_doze_policy">AOSP 电池优化</string>
     <string name="aosp_doze_policy_description">应用到所选 Android 用户，与 Aurogon 开关相互独立。</string>
     <string name="app_doze_off">不更改</string>

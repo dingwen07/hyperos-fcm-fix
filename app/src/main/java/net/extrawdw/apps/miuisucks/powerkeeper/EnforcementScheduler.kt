@@ -11,21 +11,33 @@ import java.util.concurrent.TimeUnit
 
 object EnforcementScheduler {
     fun schedule(context: Context, intervalMinutes: Long) {
-        val normalizedInterval = intervalMinutes.coerceAtLeast(GuardSettingsStore.MINIMUM_INTERVAL_MINUTES)
-        AppLog.i("Scheduler", "schedule enforcement=${normalizedInterval}m fcmRecovery=${GuardSettingsStore.MINIMUM_INTERVAL_MINUTES}m")
-        val enforcementRequest = PeriodicWorkRequestBuilder<EnforcementWorker>(
-            normalizedInterval,
-            TimeUnit.MINUTES,
-        )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
-            .addTag(WORK_TAG)
-            .build()
+        val workManager = WorkManager.getInstance(context)
+        val normalizedInterval = GuardSettingsStore.normalizeIntervalMinutes(intervalMinutes)
+        if (GuardSettingsStore.isPeriodicEnforcementEnabled(normalizedInterval)) {
+            AppLog.i(
+                "Scheduler",
+                "schedule enforcement=${normalizedInterval}m fcmRecovery=${GuardSettingsStore.MINIMUM_INTERVAL_MINUTES}m",
+            )
+            val enforcementRequest = PeriodicWorkRequestBuilder<EnforcementWorker>(
+                normalizedInterval,
+                TimeUnit.MINUTES,
+            )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+                .addTag(WORK_TAG)
+                .build()
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PERIODIC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            enforcementRequest,
-        )
+            workManager.enqueueUniquePeriodicWork(
+                PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                enforcementRequest,
+            )
+        } else {
+            AppLog.i(
+                "Scheduler",
+                "periodic enforcement disabled; fcmRecovery=${GuardSettingsStore.MINIMUM_INTERVAL_MINUTES}m",
+            )
+            workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+        }
 
         val fcmRecoveryRequest = PeriodicWorkRequestBuilder<FcmRecoveryWorker>(
             GuardSettingsStore.MINIMUM_INTERVAL_MINUTES,
@@ -34,7 +46,7 @@ object EnforcementScheduler {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .addTag(WORK_TAG)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        workManager.enqueueUniquePeriodicWork(
             FCM_RECOVERY_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             fcmRecoveryRequest,

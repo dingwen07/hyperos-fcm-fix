@@ -24,6 +24,11 @@ class GuardWakeReceiver : BroadcastReceiver() {
         // WorkManager retries if Shizuku has not started yet.
         EnforcementScheduler.recoverFcmNow(context.applicationContext)
 
+        if (!GuardSettingsStore.isPeriodicEnforcementEnabled(settings.intervalMinutes)) {
+            AppLog.i("Receiver", "periodic enforcement disabled; FCM recovery only")
+            return
+        }
+
         val lastRun = store.loadLastRun()
         val staleAfterMillis = settings.intervalMinutes * 60_000L
         if (lastRun == null || System.currentTimeMillis() - lastRun.timestampMillis >= staleAfterMillis) {

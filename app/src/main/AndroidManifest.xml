@@ -7,6 +7,9 @@
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.miui.system" />
+        <intent>
+            <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+        </intent>
     </queries>
 
     <application

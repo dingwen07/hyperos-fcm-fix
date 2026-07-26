@@ -4,10 +4,25 @@ import android.content.Context
 import androidx.core.content.edit
 
 data class GuardSettings(
-    val wechatPolicy: WechatPolicy,
+    val appPolicies: Map<String, AppPolicy>,
     val intervalMinutes: Long,
     val androidUsers: List<AndroidUserSelection>,
-)
+) {
+    fun policyFor(packageName: String): AppPolicy =
+        appPolicies[packageName] ?: AppPolicyDefaults.forPackage(packageName)
+
+    val aurogonEnabledPackages: List<String>
+        get() = appPolicies.values
+            .filter(AppPolicy::aurogonEnabled)
+            .map(AppPolicy::packageName)
+            .sorted()
+
+    val aurogonManagedPackages: List<String>
+        get() = appPolicies.values
+            .filter(AppPolicy::aurogonManaged)
+            .map(AppPolicy::packageName)
+            .sorted()
+}
 
 data class LastRun(
     val timestampMillis: Long,
@@ -19,21 +34,67 @@ class GuardSettingsStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     fun loadSettings(): GuardSettings = GuardSettings(
-        wechatPolicy = WechatPolicy.fromPersistedValue(
-            preferences.getString(KEY_WECHAT_POLICY, WechatPolicy.OPTIMIZED.persistedValue),
+        appPolicies = loadAppPolicies(),
+        intervalMinutes = normalizeIntervalMinutes(
+            preferences.getLong(KEY_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES),
         ),
-        intervalMinutes = preferences.getLong(KEY_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)
-            .coerceAtLeast(MINIMUM_INTERVAL_MINUTES),
         androidUsers = loadAndroidUsers(),
     )
 
-    fun setWechatPolicy(policy: WechatPolicy) {
-        preferences.edit { putString(KEY_WECHAT_POLICY, policy.persistedValue) }
+    fun loadAppPolicies(): Map<String, AppPolicy> {
+        val policies = preferences.getStringSet(KEY_APP_POLICIES, emptySet())
+            .orEmpty()
+            .mapNotNull(::decodeAppPolicy)
+            .associateBy(AppPolicy::packageName)
+            .toMutableMap()
+        AppPolicyDefaults.initialPolicies().forEach { (packageName, policy) ->
+            policies.putIfAbsent(packageName, policy)
+        }
+        return policies
+    }
+
+    fun setAppMasterEnabled(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) {
+            if (enabled) {
+                it.copy(
+                    aurogonEnabled = true,
+                    aurogonManaged = true,
+                    autostartEnabled = true,
+                    autostartManaged = true,
+                )
+            } else {
+                it.copy(
+                    aurogonEnabled = false,
+                    aurogonManaged = true,
+                    dozePolicy = AppDozePolicy.DEFAULT,
+                )
+            }
+        }
+    }
+
+    fun setAurogonEnabled(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) {
+            it.copy(aurogonEnabled = enabled, aurogonManaged = true)
+        }
+    }
+
+    fun setAutostartEnabled(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) {
+            it.copy(autostartEnabled = enabled, autostartManaged = true)
+        }
+    }
+
+    fun setDozePolicy(packageName: String, policy: AppDozePolicy) {
+        updateAppPolicy(packageName) { it.copy(dozePolicy = policy) }
+    }
+
+    fun setPeriodicEnforcement(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) { it.copy(periodicEnforcement = enabled) }
     }
 
     fun setIntervalMinutes(minutes: Long) {
         preferences.edit {
-            putLong(KEY_INTERVAL_MINUTES, minutes.coerceAtLeast(MINIMUM_INTERVAL_MINUTES))
+            putLong(KEY_INTERVAL_MINUTES, normalizeIntervalMinutes(minutes))
         }
     }
 
@@ -67,6 +128,25 @@ class GuardSettingsStore(context: Context) {
         preferences.edit { putString(KEY_ANDROID_USERS, AndroidUserSelections.encode(users)) }
     }
 
+    private fun updateAppPolicy(packageName: String, transform: (AppPolicy) -> AppPolicy) {
+        require(PACKAGE_NAME.matches(packageName)) { "Invalid package name" }
+        val policies = loadAppPolicies().toMutableMap()
+        val current = policies[packageName] ?: AppPolicyDefaults.forPackage(packageName)
+        policies[packageName] = transform(current).copy(packageName = packageName)
+        saveAppPolicies(policies.values)
+    }
+
+    private fun saveAppPolicies(policies: Collection<AppPolicy>) {
+        preferences.edit {
+            putStringSet(
+                KEY_APP_POLICIES,
+                policies
+                    .filter { PACKAGE_NAME.matches(it.packageName) }
+                    .mapTo(linkedSetOf(), ::encodeAppPolicy),
+            )
+        }
+    }
+
     fun loadLastRun(): LastRun? {
         val timestamp = preferences.getLong(KEY_LAST_RUN_TIMESTAMP, 0L)
         if (timestamp == 0L) return null
@@ -86,16 +166,59 @@ class GuardSettingsStore(context: Context) {
     }
 
     companion object {
+        const val DISABLED_INTERVAL_MINUTES = 0L
         const val MINIMUM_INTERVAL_MINUTES = 15L
         const val DEFAULT_INTERVAL_MINUTES = 60L
 
+        fun isPeriodicEnforcementEnabled(intervalMinutes: Long): Boolean =
+            intervalMinutes > DISABLED_INTERVAL_MINUTES
+
+        internal fun normalizeIntervalMinutes(minutes: Long): Long =
+            if (minutes == DISABLED_INTERVAL_MINUTES) {
+                DISABLED_INTERVAL_MINUTES
+            } else {
+                minutes.coerceAtLeast(MINIMUM_INTERVAL_MINUTES)
+            }
+
         private const val PREFERENCES_NAME = "guard_settings"
-        private const val KEY_WECHAT_POLICY = "wechat_policy"
+        private const val KEY_APP_POLICIES = "app_policies_v2"
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
         private const val KEY_ANDROID_USERS = "android_users"
         private const val KEY_LAST_RUN_TIMESTAMP = "last_run_timestamp"
         private const val KEY_LAST_RUN_SUCCEEDED = "last_run_succeeded"
         private const val KEY_LAST_RUN_REPORT = "last_run_report"
         private const val MAX_STORED_REPORT_LENGTH = 24_000
+
+        private val PACKAGE_NAME = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*")
+
+        internal fun encodeAppPolicy(policy: AppPolicy): String = listOf(
+            policy.packageName,
+            if (policy.aurogonEnabled) "1" else "0",
+            if (policy.aurogonManaged) "1" else "0",
+            if (policy.autostartEnabled) "1" else "0",
+            if (policy.autostartManaged) "1" else "0",
+            policy.dozePolicy.persistedValue,
+            if (policy.periodicEnforcement) "1" else "0",
+        ).joinToString("|")
+
+        internal fun decodeAppPolicy(encoded: String): AppPolicy? {
+            val fields = encoded.split('|')
+            if (fields.size != 7 || !PACKAGE_NAME.matches(fields[0])) return null
+            val aurogonEnabled = fields[1]
+            val aurogonManaged = fields[2]
+            val autostartEnabled = fields[3]
+            val autostartManaged = fields[4]
+            val periodic = fields[6]
+            if (listOf(aurogonEnabled, aurogonManaged, autostartEnabled, autostartManaged, periodic).any { it !in setOf("0", "1") }) return null
+            return AppPolicy(
+                packageName = fields[0],
+                aurogonEnabled = aurogonEnabled == "1",
+                aurogonManaged = aurogonManaged == "1",
+                autostartEnabled = autostartEnabled == "1",
+                autostartManaged = autostartManaged == "1",
+                dozePolicy = AppDozePolicy.fromPersistedValue(fields[5]),
+                periodicEnforcement = periodic == "1",
+            )
+        }
     }
 }

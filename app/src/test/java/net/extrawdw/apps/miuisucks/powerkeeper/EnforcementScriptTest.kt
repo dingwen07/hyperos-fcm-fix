@@ -1,16 +1,18 @@
 package net.extrawdw.apps.miuisucks.powerkeeper
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EnforcementScriptTest {
     private val applicationId = "net.extrawdw.apps.miuisucks.powerkeeper"
+    private val autoUnrestrictedPackage = AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.first()
+    private val autoUnrestrictedPolicy = AppPolicyDefaults.forPackage(autoUnrestrictedPackage)
 
     @Test
     fun scriptTargetsOnlyOwnerAndXSpace() {
-        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
 
         assertTrue(script.contains("for target_user in 0 999"))
         assertFalse(script.contains("--user 16"))
@@ -21,90 +23,119 @@ class EnforcementScriptTest {
 
     @Test
     fun customUserSelectionReplacesDefaultUsers() {
-        val script = EnforcementScript.build(
-            WechatPolicy.OPTIMIZED,
-            applicationId,
-            targetUsers = listOf(10),
-        )
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId, targetUsers = listOf(10))
 
         assertTrue(script.contains("for target_user in 10"))
         assertFalse(script.contains("for target_user in 0 999"))
     }
 
     @Test
-    fun emptyUserSelectionDoesNotMutateWechat() {
-        val script = EnforcementScript.build(
-            WechatPolicy.OPTIMIZED,
-            applicationId,
-            targetUsers = emptyList(),
-        )
+    fun emptyUserSelectionDoesNotMutateConfiguredApps() {
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId, targetUsers = emptyList())
 
-        assertTrue(script.contains("no Android users selected"))
-        assertFalse(script.contains("cmd appops set --user \"\$target_user\" '${EnforcementScript.WECHAT_PACKAGE}'"))
+        assertTrue(script.contains("No Android users selected"))
+        assertFalse(script.contains("'$autoUnrestrictedPackage' RUN_ANY_IN_BACKGROUND"))
+        assertFalse(script.contains("'$autoUnrestrictedPackage' '10008'"))
     }
 
     @Test
-    fun optimizedAllowsBackgroundButRemovesUnrestrictedAllowlist() {
-        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+    fun optimizedBatteryPolicyAllowsBackgroundButRemovesUnrestrictedAllowlist() {
+        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.DEFAULT)
+        val script = EnforcementScript.build(listOf(policy), applicationId)
 
-        assertTrue(script.contains("'$applicationId' RUN_ANY_IN_BACKGROUND allow"))
-        assertTrue(script.contains("'${EnforcementScript.WECHAT_PACKAGE}' RUN_ANY_IN_BACKGROUND 'allow'"))
-        assertTrue(script.contains("whitelist '-${EnforcementScript.WECHAT_PACKAGE}'"))
+        assertTrue(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND 'allow'"))
+        assertTrue(script.contains("whitelist '-com.example.push'"))
+    }
+
+    @Test
+    fun unrestrictedBatteryPolicyAddsUnrestrictedAllowlist() {
+        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.UNRESTRICTED)
+        val script = EnforcementScript.build(listOf(policy), applicationId)
+
+        assertTrue(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND 'allow'"))
+        assertTrue(script.contains("whitelist '+com.example.push'"))
+    }
+
+    @Test
+    fun configuredAutostartWritesBothXiaomiAppOps() {
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
+
+        assertTrue(script.contains("'$autoUnrestrictedPackage' '10008' 'allow'"))
+        assertTrue(script.contains("'$autoUnrestrictedPackage' '10053' 'allow'"))
+    }
+
+    @Test
+    fun disablingManagedAutostartWritesIgnore() {
+        val policy = AppPolicy("com.example.push", autostartManaged = true)
+        val script = EnforcementScript.build(listOf(policy), applicationId)
+
+        assertTrue(script.contains("'com.example.push' '10008' 'ignore'"))
+        assertTrue(script.contains("'com.example.push' '10053' 'ignore'"))
     }
 
     @Test
     fun selfProtectionEnablesBothXiaomiAutostartAppOpsForOwner() {
-        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
 
         assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10008' allow"))
         assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10053' allow"))
         assertFalse(script.contains("cmd appops set --user 999 '$applicationId' '10008' allow"))
-        assertFalse(script.contains("cmd appops set --user 999 '$applicationId' '10053' allow"))
     }
 
     @Test
-    fun selfProtectionEnablesXiaomiBootAndBackgroundExecutionAppOps() {
-        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+    fun restrictedPolicyIgnoresArbitraryAppBackgroundOps() {
+        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.RESTRICTED)
+        val script = EnforcementScript.build(listOf(policy), applicationId)
 
-        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10007' allow"))
-        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10021' allow"))
-        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10023' allow"))
+        assertTrue(script.contains("'com.example.push' RUN_IN_BACKGROUND 'ignore'"))
+        assertTrue(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND 'ignore'"))
     }
 
     @Test
-    fun restrictedIgnoresWechatBackgroundOps() {
-        val script = EnforcementScript.build(WechatPolicy.RESTRICTED, applicationId)
+    fun offUnmanagedPolicyDoesNotMutateApp() {
+        val script = EnforcementScript.build(listOf(AppPolicy("com.example.push")), applicationId)
 
-        assertTrue(script.contains("'${EnforcementScript.WECHAT_PACKAGE}' RUN_IN_BACKGROUND 'ignore'"))
-        assertTrue(script.contains("'${EnforcementScript.WECHAT_PACKAGE}' RUN_ANY_IN_BACKGROUND 'ignore'"))
-    }
-
-    @Test
-    fun disabledDoesNotMutateWechat() {
-        val script = EnforcementScript.build(WechatPolicy.DISABLED, applicationId)
-
-        assertTrue(script.contains("WeChat policy: disabled"))
-        assertFalse(script.contains("'$applicationId' RUN_ANY_IN_BACKGROUND 'ignore'"))
-        assertFalse(script.contains("whitelist '-${EnforcementScript.WECHAT_PACKAGE}'"))
+        assertTrue(script.contains("No per-app Autostart or AOSP battery policies selected"))
+        assertFalse(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND"))
+        assertFalse(script.contains("'com.example.push' '10008'"))
     }
 
     @Test
     fun scriptDoesNotAlterPowerKeeper() {
-        val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
+        val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
 
         assertFalse(script.contains("com.miui.powerkeeper"))
         assertFalse(script.contains("force-stop --user"))
     }
 
     @Test
+    fun targetedPolicyDoesNotApplyManagerSelfProtection() {
+        val policy = AppPolicy("com.example.push", autostartEnabled = true, autostartManaged = true)
+        val script = EnforcementScript.build(
+            listOf(policy),
+            applicationId,
+            includeSelfProtection = false,
+        )
+
+        assertTrue(script.contains("'com.example.push' '10008' 'allow'"))
+        assertFalse(script.contains("'$applicationId' '10008' allow"))
+        assertFalse(script.contains("whitelist '+$applicationId'"))
+    }
+
+    @Test
     fun generatedScriptHasValidShellSyntax() {
-        WechatPolicy.entries.forEach { policy ->
-            val process = ProcessBuilder("/bin/sh", "-n").start()
-            process.outputStream.bufferedWriter().use {
-                it.write(EnforcementScript.build(policy, applicationId))
-            }
-            val error = process.errorStream.bufferedReader().readText()
-            assertEquals("$policy: $error", 0, process.waitFor())
-        }
+        val policies = listOf(
+            autoUnrestrictedPolicy,
+            AppPolicy("com.example.default", dozePolicy = AppDozePolicy.DEFAULT),
+            AppPolicy(
+                "com.example.restricted",
+                autostartManaged = true,
+                dozePolicy = AppDozePolicy.RESTRICTED,
+            ),
+        )
+        val process = ProcessBuilder("/bin/sh", "-n").start()
+        process.outputStream.bufferedWriter().use { it.write(EnforcementScript.build(policies, applicationId)) }
+        val error = process.errorStream.bufferedReader().readText()
+        assertEquals(error, 0, process.waitFor())
     }
 }

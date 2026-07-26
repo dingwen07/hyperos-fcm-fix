@@ -30,8 +30,13 @@ class FcmRecoveryWorker(
             return Result.success()
         }
 
+        val settings = GuardSettingsStore(applicationContext).loadSettings()
         return runCatching {
-            PrivilegedServiceClient.startFcmProtection("background:fcm-recovery")
+            PrivilegedServiceClient.startFcmProtection(
+                settings.aurogonEnabledPackages,
+                settings.aurogonManagedPackages,
+                "background:fcm-recovery",
+            )
         }
             .fold(
                 onSuccess = { report ->

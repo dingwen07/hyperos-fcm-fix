@@ -17,20 +17,42 @@
     <string name="manage">管理</string>
 
     <string name="automatic_protection">自动保护</string>
-    <string name="protection_summary">保持 Google Play 服务可用，以确保通知及时送达。%1$s</string>
-    <string name="wechat_policy_off_status">微信电量策略已关闭。</string>
-    <plurals name="wechat_policy_active_status">
-        <item quantity="other">微信模式：%1$s · 已选用户：%2$d。</item>
-    </plurals>
+    <string name="protection_summary">Google Play 服务已受保护。Aurogon：%1$d 个应用 · 自启动：%2$d 个应用 · 定期 AppOps：%3$d 个应用。</string>
     <string name="applying">正在应用…</string>
     <string name="apply_now">立即应用</string>
 
     <string name="android_profiles">Android 用户</string>
-    <string name="android_profiles_description">选择应用微信电量策略的用户。默认启用机主和手机分身用户。</string>
+    <string name="android_profiles_description">选择应用 MIUI 自启动和 AOSP 电池优化设置的用户。默认启用机主和手机分身用户。</string>
     <string name="android_profiles_empty">尚未保存用户。连接 Shizuku 后将自动加载。</string>
     <string name="android_user_id">用户 %1$d</string>
     <string name="refreshing">正在刷新…</string>
     <string name="refresh_profiles">刷新用户</string>
+
+    <string name="apps_title">应用</string>
+    <string name="home">主页</string>
+    <string name="apps_search_hint">搜索应用</string>
+    <string name="apps_empty">未找到支持 FCM 的已安装应用。</string>
+    <string name="apps_no_match">没有与“%1$s”匹配的应用。</string>
+    <string name="apps_section_enabled">已保护</string>
+    <string name="apps_section_all">所有应用</string>
+    <string name="app_not_installed">未安装 · %1$s</string>
+
+    <string name="aurogon_protection">Aurogon FCM 保护</string>
+    <string name="aurogon_protection_description">当 HyperOS 准备缓存已冻结应用的 FCM 广播时唤醒此应用。</string>
+    <string name="miui_autostart">MIUI 自启动</string>
+    <string name="miui_autostart_description">通过两个小米自启动 AppOp 允许冷启动接收消息。</string>
+    <string name="periodic_enforcement">定期强制应用</string>
+    <string name="periodic_enforcement_description">当 MIUI 覆盖设置时，定期恢复此应用的自启动和 AOSP 电池优化 AppOp。Aurogon 会独立保持启用。</string>
+    <string name="aosp_doze_policy">AOSP 电池优化</string>
+    <string name="aosp_doze_policy_description">应用到所选 Android 用户，与 Aurogon 开关相互独立。</string>
+    <string name="app_doze_off">不更改</string>
+    <string name="app_doze_off_description">不更改此应用的 AOSP 电池优化设置。</string>
+    <string name="app_doze_unrestricted">无限制</string>
+    <string name="app_doze_unrestricted_description">允许后台运行，并将应用加入 Android 无限制白名单。</string>
+    <string name="app_doze_default">优化</string>
+    <string name="app_doze_default_description">允许正常后台运行，但不将应用保留在 Android 无限制白名单中。</string>
+    <string name="app_doze_restricted">受限制</string>
+    <string name="app_doze_restricted_description">限制后台 AppOp，通知和后台工作可能延迟。</string>
 
     <string name="google_play_services">Google Play 服务</string>
     <string name="gms_status_not_checked">尚未检查状态</string>
@@ -42,18 +64,9 @@
     <string name="checking">正在检查…</string>
     <string name="refresh_status">刷新状态</string>
 
-    <string name="wechat_battery_policy">微信电量策略</string>
-    <string name="wechat_battery_policy_description">选择微信在所选用户中如何在后台运行。</string>
-    <string name="recommended">推荐</string>
-    <string name="wechat_policy_off">关闭</string>
-    <string name="wechat_policy_off_description">不更改微信的电量设置。</string>
-    <string name="wechat_policy_optimized">优化</string>
-    <string name="wechat_policy_optimized_description">允许后台活动，但不使用“无限制”模式。</string>
-    <string name="wechat_policy_restricted">受限制</string>
-    <string name="wechat_policy_restricted_description">限制后台活动以节省更多电量，通知可能会延迟。</string>
-
     <string name="check_frequency">检查频率</string>
-    <string name="check_frequency_description">定期刷新所选微信策略；连接 Shizuku 时会持续保护通知。</string>
+    <string name="check_frequency_description">定期恢复已选择应用的自启动和 AOSP 电池优化 AppOp。选择“关闭”会停用此 AppOps 任务；Aurogon 和 GMS 恢复仍独立运行。</string>
+    <string name="off">关闭</string>
     <string name="interval_minutes">%1$d 分钟</string>
     <string name="interval_one_hour">1 小时</string>
     <plurals name="interval_hours">
@@ -88,7 +101,10 @@
     <string name="shizuku_access_denied_previously_message">之前的授权已被拒绝，请在 Shizuku 中重新启用本应用。</string>
     <string name="shizuku_request_failed_message">无法请求 Shizuku 权限：%1$s</string>
     <string name="shizuku_not_installed_message">未安装 Shizuku。</string>
-    <string name="wechat_policy_changed_message">微信模式已更改为%1$s。</string>
+    <string name="app_setting_changed_message">%1$s 的设置已更改，正在应用一次…</string>
+    <string name="app_setting_saved_message">已保存 %1$s 的设置。</string>
+    <string name="app_setting_applied_message">已应用 %1$s 的设置。</string>
+    <string name="app_setting_failed_message">无法应用 %1$s 的设置：%2$s</string>
     <string name="frequency_changed_message">检查频率已更改为%1$s。</string>
     <string name="applying_settings_message">正在应用设置…</string>
     <string name="settings_applied_message">设置已应用。</string>
@@ -99,8 +115,8 @@
         <item quantity="other">找到 %1$d 个 Android 用户。</item>
     </plurals>
     <string name="android_profiles_refresh_failed_message">无法刷新 Android 用户：%1$s</string>
-    <string name="android_profile_enabled_message">已为微信启用%1$s。</string>
-    <string name="android_profile_disabled_message">已为微信停用%1$s。</string>
+    <string name="android_profile_enabled_message">已为每应用策略启用%1$s。</string>
+    <string name="android_profile_disabled_message">已为每应用策略停用%1$s。</string>
     <string name="android_user_fallback">用户 %1$d</string>
     <string name="protection_status_failed_message">无法检查保护状态：%1$s</string>
     <string name="unknown_error">未知错误</string>

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,10 +25,12 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -40,16 +42,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.extrawdw.apps.miuisucks.powerkeeper.ui.theme.MIUIPowerKeeperFixTheme
 import rikka.shizuku.Shizuku
 import java.text.DateFormat
@@ -70,10 +76,11 @@ data class ShizukuStatus(
 
 data class GuardUiState(
     val settings: GuardSettings = GuardSettings(
-        wechatPolicy = WechatPolicy.OPTIMIZED,
+        appPolicies = AppPolicyDefaults.initialPolicies(),
         intervalMinutes = GuardSettingsStore.DEFAULT_INTERVAL_MINUTES,
         androidUsers = emptyList(),
     ),
+    val installedApps: List<InstalledFcmApp>? = null,
     val shizuku: ShizukuStatus = ShizukuStatus(),
     val lastRun: LastRun? = null,
     val applying: Boolean = false,
@@ -84,15 +91,19 @@ data class GuardUiState(
     val messageIsError: Boolean = false,
 )
 
+private enum class GuardTab { HOME, APPS }
+
 class MainActivity : ComponentActivity() {
     private lateinit var settingsStore: GuardSettingsStore
     private var uiState by mutableStateOf(GuardUiState())
     private var shizukuListenersRegistered = false
     private var applyAfterAndroidUserRefresh = false
+    private var loadingInstalledApps = false
+    private var stalePeriodicRunning = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshState()
-        if (uiState.shizuku.granted) applyNow()
+        if (uiState.shizuku.granted) maybeApplyStaleSettings()
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         refreshState(getString(R.string.shizuku_stopped_message), messageIsError = true)
@@ -108,7 +119,7 @@ class MainActivity : ComponentActivity() {
             },
             messageIsError = !granted,
         )
-        if (granted) applyNow()
+        if (granted) maybeApplyStaleSettings()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,12 +156,17 @@ class MainActivity : ComponentActivity() {
                     onRefreshAndroidUsers = { refreshAndroidUsers() },
                     onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                     onCheckMilletValue = ::checkMilletValue,
-                    onPolicySelected = ::setWechatPolicy,
+                    onAppMasterChanged = ::setAppMasterEnabled,
+                    onAurogonChanged = ::setAurogonEnabled,
+                    onAutostartChanged = ::setAutostartEnabled,
+                    onPeriodicChanged = ::setPeriodicEnforcement,
+                    onDozeChanged = ::setDozePolicy,
                     onIntervalSelected = ::setInterval,
                     onLogsCleared = ::flushServiceLogs,
                 )
             }
         }
+        loadInstalledApps()
         maybeApplyStaleSettings()
     }
 
@@ -158,6 +174,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::settingsStore.isInitialized) {
             refreshState()
+            loadInstalledApps()
             if (uiState.shizuku.granted) {
                 if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
                 if (!uiState.applying) checkMilletValue()
@@ -240,14 +257,145 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setWechatPolicy(policy: WechatPolicy) {
-        if (policy == uiState.settings.wechatPolicy) return
-        settingsStore.setWechatPolicy(policy)
+    private fun setAppMasterEnabled(packageName: String, enabled: Boolean) {
+        settingsStore.setAppMasterEnabled(packageName, enabled)
+        val settings = refreshAppSetting(packageName, willApply = true)
+        if (!uiState.shizuku.granted) return
+        val policy = settings.policyFor(packageName)
+        runAppSettingAction(packageName, if (enabled) "master-on" else "master-off") {
+            buildString {
+                appendLine(
+                    PrivilegedServiceClient.reconcileAurogon(
+                        settings.aurogonEnabledPackages,
+                        settings.aurogonManagedPackages,
+                        TRIGGER_UI_APP_CHANGE,
+                    ),
+                )
+                append(
+                    PrivilegedServiceClient.applyAppPolicy(
+                        policy = if (enabled) {
+                            policy
+                        } else {
+                            policy.copy(
+                                autostartEnabled = false,
+                                autostartManaged = false,
+                                dozePolicy = AppDozePolicy.DEFAULT,
+                            )
+                        },
+                        targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                        trigger = TRIGGER_UI_APP_CHANGE,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun setAurogonEnabled(packageName: String, enabled: Boolean) {
+        settingsStore.setAurogonEnabled(packageName, enabled)
+        val settings = refreshAppSetting(packageName, willApply = true)
+        if (!uiState.shizuku.granted) return
+        runAppSettingAction(packageName, "aurogon") {
+            PrivilegedServiceClient.reconcileAurogon(
+                settings.aurogonEnabledPackages,
+                settings.aurogonManagedPackages,
+                TRIGGER_UI_APP_CHANGE,
+            )
+        }
+    }
+
+    private fun setAutostartEnabled(packageName: String, enabled: Boolean) {
+        settingsStore.setAutostartEnabled(packageName, enabled)
+        refreshAppSetting(packageName, willApply = true)
+        if (!uiState.shizuku.granted) return
+        runAppSettingAction(packageName, "autostart") {
+            PrivilegedServiceClient.applyAppPolicy(
+                policy = AppPolicy(
+                    packageName = packageName,
+                    autostartEnabled = enabled,
+                    autostartManaged = true,
+                ),
+                targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                trigger = TRIGGER_UI_APP_CHANGE,
+            )
+        }
+    }
+
+    private fun setPeriodicEnforcement(packageName: String, enabled: Boolean) {
+        settingsStore.setPeriodicEnforcement(packageName, enabled)
+        refreshAppSetting(packageName, willApply = false)
+    }
+
+    private fun setDozePolicy(packageName: String, policy: AppDozePolicy) {
+        settingsStore.setDozePolicy(packageName, policy)
+        refreshAppSetting(packageName, willApply = policy != AppDozePolicy.OFF)
+        if (!uiState.shizuku.granted || policy == AppDozePolicy.OFF) return
+        runAppSettingAction(packageName, "battery") {
+            PrivilegedServiceClient.applyAppPolicy(
+                policy = AppPolicy(packageName = packageName, dozePolicy = policy),
+                targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                trigger = TRIGGER_UI_APP_CHANGE,
+            )
+        }
+    }
+
+    private fun refreshAppSetting(packageName: String, willApply: Boolean): GuardSettings {
+        val label = uiState.installedApps?.firstOrNull { it.packageName == packageName }?.label ?: packageName
         refreshState(
-            getString(R.string.wechat_policy_changed_message, getString(policy.titleRes)),
+            getString(
+                if (willApply && uiState.shizuku.granted) {
+                    R.string.app_setting_changed_message
+                } else {
+                    R.string.app_setting_saved_message
+                },
+                label,
+            ),
             messageIsError = false,
         )
-        if (uiState.shizuku.granted) applyNow()
+        return uiState.settings
+    }
+
+    private fun runAppSettingAction(
+        packageName: String,
+        actionName: String,
+        action: suspend () -> String,
+    ) {
+        val label = uiState.installedApps?.firstOrNull { it.packageName == packageName }?.label ?: packageName
+        lifecycleScope.launch {
+            runCatching { action() }
+                .onSuccess { report ->
+                    val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
+                    uiState = uiState.copy(
+                        message = getString(
+                            if (succeeded) R.string.app_setting_applied_message else R.string.settings_partially_applied_message,
+                            label,
+                        ),
+                        messageIsError = !succeeded,
+                    )
+                }
+                .onFailure { error ->
+                    AppLog.e("UI/AppPolicy", "action=$actionName package=$packageName failed", error)
+                    uiState = uiState.copy(
+                        message = getString(
+                            R.string.app_setting_failed_message,
+                            label,
+                            error.message ?: error.javaClass.simpleName,
+                        ),
+                        messageIsError = true,
+                    )
+                }
+        }
+    }
+
+    private fun loadInstalledApps() {
+        if (loadingInstalledApps) return
+        loadingInstalledApps = true
+        lifecycleScope.launch {
+            val apps = withContext(Dispatchers.IO) {
+                InstalledFcmApps.load(applicationContext, settingsStore.loadAppPolicies().keys)
+            }
+            uiState = uiState.copy(installedApps = apps)
+            loadingInstalledApps = false
+        }
     }
 
     private fun setInterval(minutes: Long) {
@@ -261,10 +409,42 @@ class MainActivity : ComponentActivity() {
 
     private fun maybeApplyStaleSettings() {
         if (!uiState.shizuku.granted || uiState.applying) return
+        if (!GuardSettingsStore.isPeriodicEnforcementEnabled(uiState.settings.intervalMinutes)) return
         val lastRun = settingsStore.loadLastRun()
         val intervalMillis = settingsStore.loadSettings().intervalMinutes * 60_000L
         if (lastRun == null || System.currentTimeMillis() - lastRun.timestampMillis >= intervalMillis) {
-            applyNow()
+            applyPeriodicPolicies()
+        }
+    }
+
+    private fun applyPeriodicPolicies() {
+        if (stalePeriodicRunning) return
+        stalePeriodicRunning = true
+        val settings = settingsStore.loadSettings()
+        val periodicPolicies = settings.appPolicies.values.filter(AppPolicy::periodicEnforcement)
+        lifecycleScope.launch {
+            runCatching {
+                PrivilegedServiceClient.enforce(
+                    settings.aurogonEnabledPackages,
+                    settings.aurogonManagedPackages,
+                    periodicPolicies,
+                    settingsStore.loadEnabledAndroidUserIds(),
+                    TRIGGER_UI_STALE_PERIODIC,
+                )
+            }.onSuccess { report ->
+                stalePeriodicRunning = false
+                val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
+                settingsStore.saveLastRun(succeeded, report)
+                uiState = uiState.copy(lastRun = settingsStore.loadLastRun())
+            }.onFailure { error ->
+                stalePeriodicRunning = false
+                AppLog.e("UI/Periodic", "stale periodic enforcement failed", error)
+                settingsStore.saveLastRun(
+                    false,
+                    getString(R.string.settings_failed_message, error.message ?: error.javaClass.simpleName),
+                )
+                uiState = uiState.copy(lastRun = settingsStore.loadLastRun())
+            }
         }
     }
 
@@ -291,7 +471,13 @@ class MainActivity : ComponentActivity() {
         )
         lifecycleScope.launch {
             runCatching {
-                PrivilegedServiceClient.enforce(settings.wechatPolicy, targetUserIds, TRIGGER_UI_APPLY)
+                PrivilegedServiceClient.enforce(
+                    settings.aurogonEnabledPackages,
+                    settings.aurogonManagedPackages,
+                    settings.appPolicies.values,
+                    targetUserIds,
+                    TRIGGER_UI_APPLY,
+                )
             }
                 .onSuccess { report ->
                     val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
@@ -376,7 +562,6 @@ class MainActivity : ComponentActivity() {
             ),
             messageIsError = false,
         )
-        if (uiState.shizuku.granted) applyNow()
     }
 
     private fun checkMilletValue() {
@@ -419,6 +604,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun formatInterval(minutes: Long): String = when (minutes) {
+        GuardSettingsStore.DISABLED_INTERVAL_MINUTES -> getString(R.string.off)
         60L -> getString(R.string.interval_one_hour)
         in 0L..59L -> getString(R.string.interval_minutes, minutes)
         else -> resources.getQuantityString(
@@ -435,6 +621,8 @@ class MainActivity : ComponentActivity() {
         private const val TRIGGER_UI_USERS = "ui:user-list"
         private const val TRIGGER_UI_MILLET = "ui:millet-check"
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
+        private const val TRIGGER_UI_APP_CHANGE = "ui:app-change"
+        private const val TRIGGER_UI_STALE_PERIODIC = "ui:stale-periodic"
     }
 }
 
@@ -448,79 +636,104 @@ private fun GuardApp(
     onRefreshAndroidUsers: () -> Unit,
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
-    onPolicySelected: (WechatPolicy) -> Unit,
+    onAppMasterChanged: (String, Boolean) -> Unit,
+    onAurogonChanged: (String, Boolean) -> Unit,
+    onAutostartChanged: (String, Boolean) -> Unit,
+    onPeriodicChanged: (String, Boolean) -> Unit,
+    onDozeChanged: (String, AppDozePolicy) -> Unit,
     onIntervalSelected: (Long) -> Unit,
     onLogsCleared: () -> Unit,
 ) {
     var showingLogs by rememberSaveable { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(GuardTab.HOME) }
+    BackHandler(enabled = selectedTab == GuardTab.APPS) { selectedTab = GuardTab.HOME }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
-                        Text(
-                            stringResource(R.string.app_subtitle),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    if (selectedTab == GuardTab.HOME) {
+                        Column {
+                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(R.string.app_subtitle),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Text(stringResource(R.string.apps_title), fontWeight = FontWeight.SemiBold)
                     }
                 },
             )
         },
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = innerPadding.calculateTopPadding() + 8.dp,
-                end = 16.dp,
-                bottom = innerPadding.calculateBottomPadding() + 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
-            item {
-                ProtectionCard(
-                    state = state,
-                    onApplyNow = onApplyNow,
-                )
-            }
-            item {
-                AndroidUsersCard(
-                    state = state,
-                    onRefreshUsers = onRefreshAndroidUsers,
-                    onUserEnabledChanged = onAndroidUserEnabledChanged,
-                )
-            }
-            item {
-                MilletNoRestrictCard(
-                    state = state,
-                    onCheckValue = onCheckMilletValue,
-                )
-            }
-            item {
-                WechatPolicyCard(
-                    selectedPolicy = state.settings.wechatPolicy,
-                    onPolicySelected = onPolicySelected,
-                )
-            }
-            item {
-                IntervalCard(
-                    selectedMinutes = state.settings.intervalMinutes,
-                    onIntervalSelected = onIntervalSelected,
-                )
-            }
-            state.lastRun?.let { lastRun ->
-                item { LastRunCard(lastRun) }
-            }
-            item {
-                LogsCard(
-                    onOpenLogs = {
-                        showingLogs = true
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedTab == GuardTab.HOME,
+                    onClick = { selectedTab = GuardTab.HOME },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.Home,
+                            contentDescription = stringResource(R.string.home),
+                        )
                     },
+                    label = { Text(stringResource(R.string.home)) },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == GuardTab.APPS,
+                    onClick = { selectedTab = GuardTab.APPS },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.Apps,
+                            contentDescription = stringResource(R.string.apps_title),
+                        )
+                    },
+                    label = { Text(stringResource(R.string.apps_title)) },
                 )
             }
+        },
+    ) { innerPadding ->
+        when (selectedTab) {
+            GuardTab.HOME -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = innerPadding.calculateTopPadding() + 8.dp,
+                    end = 16.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 24.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
+                item { ProtectionCard(state = state, onApplyNow = onApplyNow) }
+                item {
+                    AndroidUsersCard(
+                        state = state,
+                        onRefreshUsers = onRefreshAndroidUsers,
+                        onUserEnabledChanged = onAndroidUserEnabledChanged,
+                    )
+                }
+                item { MilletNoRestrictCard(state = state, onCheckValue = onCheckMilletValue) }
+                item {
+                    IntervalCard(
+                        selectedMinutes = state.settings.intervalMinutes,
+                        onIntervalSelected = onIntervalSelected,
+                    )
+                }
+                state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
+                item { LogsCard(onOpenLogs = { showingLogs = true }) }
+            }
+
+            GuardTab.APPS -> AppManagementScreen(
+                apps = state.installedApps,
+                policies = state.settings.appPolicies,
+                modifier = Modifier.padding(innerPadding),
+                onMasterChanged = onAppMasterChanged,
+                onAurogonChanged = onAurogonChanged,
+                onAutostartChanged = onAutostartChanged,
+                onPeriodicChanged = onPeriodicChanged,
+                onDozeChanged = onDozeChanged,
+            )
         }
     }
     if (showingLogs) {
@@ -614,22 +827,13 @@ private fun ShizukuCard(
 
 @Composable
 private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
-    val enabledUserCount = if (state.settings.androidUsers.isEmpty()) {
-        AndroidUserSelections.DEFAULT_ENABLED_USER_IDS.size
-    } else {
-        state.settings.androidUsers.count(AndroidUserSelection::enabled)
-    }
-    val wechatStatus = if (state.settings.wechatPolicy == WechatPolicy.DISABLED) {
-        stringResource(R.string.wechat_policy_off_status)
-    } else {
-        pluralStringResource(
-            R.plurals.wechat_policy_active_status,
-            enabledUserCount,
-            stringResource(state.settings.wechatPolicy.titleRes),
-            enabledUserCount,
-        )
-    }
-    val statusText = stringResource(R.string.protection_summary, wechatStatus)
+    val policies = state.settings.appPolicies.values
+    val statusText = stringResource(
+        R.string.protection_summary,
+        policies.count(AppPolicy::aurogonEnabled),
+        policies.count { it.autostartManaged && it.autostartEnabled },
+        policies.count(AppPolicy::periodicEnforcement),
+    )
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -843,71 +1047,13 @@ private fun MilletNoRestrictCard(
 }
 
 @Composable
-private fun WechatPolicyCard(
-    selectedPolicy: WechatPolicy,
-    onPolicySelected: (WechatPolicy) -> Unit,
-) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(vertical = 10.dp)) {
-            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                Text(
-                    stringResource(R.string.wechat_battery_policy),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.wechat_battery_policy_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            WechatPolicy.entries.forEachIndexed { index, policy ->
-                if (index > 0) HorizontalDivider(modifier = Modifier.padding(horizontal = 18.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = selectedPolicy == policy,
-                            onClick = { onPolicySelected(policy) },
-                            role = Role.RadioButton,
-                        )
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(
-                        selected = selectedPolicy == policy,
-                        onClick = null,
-                    )
-                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(policy.titleRes), fontWeight = FontWeight.Medium)
-                            if (policy == WechatPolicy.OPTIMIZED) {
-                                Text(
-                                    stringResource(R.string.recommended),
-                                    modifier = Modifier.padding(start = 8.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                        Text(
-                            stringResource(policy.descriptionRes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun IntervalCard(
     selectedMinutes: Long,
     onIntervalSelected: (Long) -> Unit,
 ) {
-    val options = remember { listOf(15L, 60L, 180L, 360L) }
+    val options = remember {
+        listOf(GuardSettingsStore.DISABLED_INTERVAL_MINUTES, 15L, 60L, 180L, 360L)
+    }
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -1009,6 +1155,7 @@ private fun LogsCard(onOpenLogs: () -> Unit) {
 
 @Composable
 private fun formatInterval(minutes: Long): String = when (minutes) {
+    GuardSettingsStore.DISABLED_INTERVAL_MINUTES -> stringResource(R.string.off)
     60L -> stringResource(R.string.interval_one_hour)
     in 0L..59L -> stringResource(R.string.interval_minutes, minutes)
     else -> pluralStringResource(

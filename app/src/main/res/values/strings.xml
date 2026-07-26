@@ -17,21 +17,42 @@
     <string name="manage">Manage</string>
 
     <string name="automatic_protection">Automatic protection</string>
-    <string name="protection_summary">Google Play services is kept available for reliable notifications. %1$s</string>
-    <string name="wechat_policy_off_status">WeChat battery changes are off.</string>
-    <plurals name="wechat_policy_active_status">
-        <item quantity="one">WeChat mode: %1$s · Selected profile: %2$d.</item>
-        <item quantity="other">WeChat mode: %1$s · Selected profiles: %2$d.</item>
-    </plurals>
+    <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Autostart: %2$d apps · Periodic AppOps: %3$d apps.</string>
     <string name="applying">Applying…</string>
     <string name="apply_now">Apply now</string>
 
     <string name="android_profiles">Android profiles</string>
-    <string name="android_profiles_description">Choose which profiles use the WeChat battery policy. The owner and XSpace profiles are enabled by default.</string>
+    <string name="android_profiles_description">Choose which profiles receive per-app MIUI Autostart and AOSP Battery optimization changes. The owner and XSpace profiles are enabled by default.</string>
     <string name="android_profiles_empty">No saved profiles yet. They will be loaded when Shizuku is connected.</string>
     <string name="android_user_id">User %1$d</string>
     <string name="refreshing">Refreshing…</string>
     <string name="refresh_profiles">Refresh profiles</string>
+
+    <string name="apps_title">Apps</string>
+    <string name="home">Home</string>
+    <string name="apps_search_hint">Search apps</string>
+    <string name="apps_empty">No installed FCM-capable apps found.</string>
+    <string name="apps_no_match">No apps match “%1$s”.</string>
+    <string name="apps_section_enabled">Protected</string>
+    <string name="apps_section_all">All apps</string>
+    <string name="app_not_installed">Not installed · %1$s</string>
+
+    <string name="aurogon_protection">Aurogon FCM protection</string>
+    <string name="aurogon_protection_description">Wake this app when HyperOS would cache its frozen FCM broadcast.</string>
+    <string name="miui_autostart">MIUI Autostart</string>
+    <string name="miui_autostart_description">Allow cold-start delivery using both Xiaomi Autostart AppOps.</string>
+    <string name="periodic_enforcement">Periodic enforcement</string>
+    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization AppOps if MIUI overwrites them. Aurogon remains enforced independently.</string>
+    <string name="aosp_doze_policy">AOSP Battery optimization</string>
+    <string name="aosp_doze_policy_description">Applied to the selected Android profiles. This is independent of the Aurogon switch.</string>
+    <string name="app_doze_off">Don’t change</string>
+    <string name="app_doze_off_description">Don’t change this app’s AOSP Battery optimization setting.</string>
+    <string name="app_doze_unrestricted">Unrestricted</string>
+    <string name="app_doze_unrestricted_description">Allow background operation and add the app to Android’s unrestricted allowlist.</string>
+    <string name="app_doze_default">Optimized</string>
+    <string name="app_doze_default_description">Allow normal background operation without keeping the app on Android’s unrestricted allowlist.</string>
+    <string name="app_doze_restricted">Restricted</string>
+    <string name="app_doze_restricted_description">Restrict background AppOps. Notifications and background work may be delayed.</string>
 
     <string name="google_play_services">Google Play services</string>
     <string name="gms_status_not_checked">Status not checked</string>
@@ -43,18 +64,9 @@
     <string name="checking">Checking…</string>
     <string name="refresh_status">Refresh status</string>
 
-    <string name="wechat_battery_policy">WeChat battery policy</string>
-    <string name="wechat_battery_policy_description">Choose how WeChat can run in the background for the selected profiles.</string>
-    <string name="recommended">Recommended</string>
-    <string name="wechat_policy_off">Off</string>
-    <string name="wechat_policy_off_description">Leave WeChat battery settings unchanged.</string>
-    <string name="wechat_policy_optimized">Optimized</string>
-    <string name="wechat_policy_optimized_description">Allow background activity without using Unrestricted mode.</string>
-    <string name="wechat_policy_restricted">Restricted</string>
-    <string name="wechat_policy_restricted_description">Limit background activity to save more battery. Notifications may be delayed.</string>
-
     <string name="check_frequency">Check frequency</string>
-    <string name="check_frequency_description">How often the selected WeChat policy is refreshed. Notification protection runs continuously while Shizuku is connected.</string>
+    <string name="check_frequency_description">How often opted-in apps’ Autostart and AOSP Battery optimization AppOps are restored. Off disables this AppOps job; Aurogon and GMS recovery continue independently.</string>
+    <string name="off">Off</string>
     <string name="interval_minutes">%1$d min</string>
     <string name="interval_one_hour">1 hour</string>
     <plurals name="interval_hours">
@@ -90,7 +102,10 @@
     <string name="shizuku_access_denied_previously_message">Authorization was denied previously. Re-enable this app in Shizuku.</string>
     <string name="shizuku_request_failed_message">Could not request Shizuku access: %1$s</string>
     <string name="shizuku_not_installed_message">Shizuku is not installed.</string>
-    <string name="wechat_policy_changed_message">WeChat mode changed to %1$s.</string>
+    <string name="app_setting_changed_message">%1$s settings changed. Applying once…</string>
+    <string name="app_setting_saved_message">%1$s settings saved.</string>
+    <string name="app_setting_applied_message">%1$s setting applied.</string>
+    <string name="app_setting_failed_message">Could not apply %1$s setting: %2$s</string>
     <string name="frequency_changed_message">Check frequency changed to %1$s.</string>
     <string name="applying_settings_message">Applying settings…</string>
     <string name="settings_applied_message">Settings applied.</string>
@@ -102,8 +117,8 @@
         <item quantity="other">Found %1$d Android profiles.</item>
     </plurals>
     <string name="android_profiles_refresh_failed_message">Could not refresh Android profiles: %1$s</string>
-    <string name="android_profile_enabled_message">%1$s enabled for WeChat.</string>
-    <string name="android_profile_disabled_message">%1$s disabled for WeChat.</string>
+    <string name="android_profile_enabled_message">%1$s enabled for per-app policies.</string>
+    <string name="android_profile_disabled_message">%1$s disabled for per-app policies.</string>
     <string name="android_user_fallback">User %1$d</string>
     <string name="protection_status_failed_message">Could not check protection status: %1$s</string>
     <string name="unknown_error">Unknown error</string>

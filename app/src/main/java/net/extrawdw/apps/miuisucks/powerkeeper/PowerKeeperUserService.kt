@@ -23,6 +23,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         Thread(runnable, "fcm-protection").apply { isDaemon = true }
     }
     private val fcmRepairLock = Any()
+    private val aurogonRepairLock = Any()
+    private var desiredAurogon = DesiredAurogon(emptySet(), emptySet())
     private var fcmPolling: ScheduledFuture<*>? = null
     private val serviceLogLock = Any()
     private val serviceLogTimeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
@@ -35,14 +37,38 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         serviceLog('I', "Service", "created uid=${Process.myUid()} pid=${Process.myPid()}")
     }
 
-    override fun enforce(wechatPolicy: Int, targetUserIds: IntArray, trigger: String): String {
+    override fun enforce(
+        aurogonPackages: Array<out String>,
+        managedAurogonPackages: Array<out String>,
+        policyPackages: Array<out String>,
+        autostartModes: IntArray,
+        dozePolicies: IntArray,
+        targetUserIds: IntArray,
+        trigger: String,
+    ): String {
         val startedAt = System.nanoTime()
-        val policy = WechatPolicy.fromCode(wechatPolicy)
-        serviceLog('I', "Enforce", "start trigger=$trigger policy=${policy.persistedValue} users=${targetUserIds.joinToString()}")
-        val script = EnforcementScript.build(policy, BuildConfig.APPLICATION_ID, targetUserIds.toList())
+        require(policyPackages.size == autostartModes.size && policyPackages.size == dozePolicies.size) {
+            "Mismatched app-policy arrays"
+        }
+        val policies = policyPackages.indices.map { index ->
+            val autostartMode = autostartModes[index]
+            require(autostartMode in -1..1) { "Invalid autostart mode" }
+            AppPolicy(
+                packageName = policyPackages[index],
+                autostartEnabled = autostartMode == 1,
+                autostartManaged = autostartMode >= 0,
+                dozePolicy = AppDozePolicy.fromCode(dozePolicies[index]),
+            )
+        }
+        serviceLog(
+            'I',
+            "Enforce",
+            "start trigger=$trigger aurogon=${aurogonPackages.size} policies=${policies.size} users=${targetUserIds.joinToString()}",
+        )
+        val script = EnforcementScript.build(policies, BuildConfig.APPLICATION_ID, targetUserIds.toList())
         return runCatching {
             buildString {
-                appendLine(startFcmProtection(trigger))
+                appendLine(startFcmProtection(aurogonPackages, managedAurogonPackages, trigger))
                 append(runScript(script))
             }.trim()
         }.onSuccess { report ->
@@ -65,8 +91,13 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         exitProcess(0)
     }
 
-    override fun startFcmProtection(trigger: String): String {
-        serviceLog('I', "FCM", "start trigger=$trigger pollActive=${isFcmPollingActive()}")
+    override fun startFcmProtection(
+        aurogonPackages: Array<out String>,
+        managedAurogonPackages: Array<out String>,
+        trigger: String,
+    ): String {
+        val desired = updateDesiredAurogon(aurogonPackages, managedAurogonPackages)
+        serviceLog('I', "FCM", "start trigger=$trigger aurogon=${desired.enabled.size}/${desired.managed.size} pollActive=${isFcmPollingActive()}")
         startFcmPolling()
 
         val report = buildString {
@@ -74,10 +105,73 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             appendLine(runGreezerCommand("Disable explicit GMS limiter", "IM", "GMS", "disable"))
             appendLine(runGreezerCommand("Restore ordinary GMS allowlist", "LM", "add", MilletNoRestrictList.GMS_PACKAGE))
             appendLine(ensureGmsNoRestrict())
+            appendLine(ensureAurogon(desired))
             append("FCM setting monitor: active (${FCM_POLL_SECONDS}s Shizuku poll)")
         }
         serviceLog('I', "FCM", "finish trigger=$trigger report=${report.singleLine(2_000)}")
         return report
+    }
+
+    override fun reconcileAurogon(
+        aurogonPackages: Array<out String>,
+        managedAurogonPackages: Array<out String>,
+        trigger: String,
+    ): String {
+        val desired = updateDesiredAurogon(aurogonPackages, managedAurogonPackages)
+        startFcmPolling()
+        val report = ensureAurogon(desired)
+        serviceLog(
+            if (report.contains("FAILED:")) 'E' else 'I',
+            "Aurogon",
+            "reconcile trigger=$trigger enabled=${desired.enabled.size} managed=${desired.managed.size} report=${report.singleLine(2_000)}",
+        )
+        return report
+    }
+
+    override fun applyAppPolicy(
+        packageName: String,
+        autostartMode: Int,
+        dozePolicy: Int,
+        targetUserIds: IntArray,
+        trigger: String,
+    ): String {
+        require(autostartMode in -1..1) { "Invalid autostart mode" }
+        val policy = AppPolicy(
+            packageName = packageName,
+            autostartEnabled = autostartMode == 1,
+            autostartManaged = autostartMode >= 0,
+            dozePolicy = AppDozePolicy.fromCode(dozePolicy),
+        )
+        val script = EnforcementScript.build(
+            policies = listOf(policy),
+            applicationId = BuildConfig.APPLICATION_ID,
+            targetUsers = targetUserIds.toList(),
+            includeSelfProtection = false,
+        )
+        serviceLog(
+            'I',
+            "AppPolicy",
+            "apply trigger=$trigger package=$packageName autostart=$autostartMode battery=${policy.dozePolicy.persistedValue} users=${targetUserIds.joinToString()}",
+        )
+        return runScript(script).also { report ->
+            serviceLog(
+                if (report.contains("FAILED:")) 'E' else 'I',
+                "AppPolicy",
+                "finish trigger=$trigger report=${report.singleLine(2_000)}",
+            )
+        }
+    }
+
+    private fun updateDesiredAurogon(
+        aurogonPackages: Array<out String>,
+        managedAurogonPackages: Array<out String>,
+    ): DesiredAurogon {
+        val desired = DesiredAurogon(aurogonPackages.toSet(), managedAurogonPackages.toSet())
+        require(desired.enabled.all { it in desired.managed }) { "Enabled Aurogon package is not managed" }
+        synchronized(aurogonRepairLock) {
+            desiredAurogon = desired
+        }
+        return desired
     }
 
     override fun getMilletNoRestrictValue(trigger: String): String {
@@ -132,6 +226,12 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                         .onFailure { error ->
                             serviceLog('E', "FCM", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
                         }
+                    val desired = synchronized(aurogonRepairLock) { desiredAurogon }
+                    runCatching { ensureAurogon(desired) }
+                        .onSuccess { result -> logRepairResult("aurogon-poll", result) }
+                        .onFailure { error ->
+                            serviceLog('E', "Aurogon", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
+                        }
                 },
                 FCM_POLL_SECONDS,
                 FCM_POLL_SECONDS,
@@ -147,7 +247,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         if (result.contains("FAILED")) {
             Log.w(TAG, "FCM repair ($reason): $result")
             serviceLog('E', "FCM", "repair reason=$reason result=${result.singleLine(2_000)}")
-        } else if (result.contains("appended GMS")) {
+        } else if (result.contains("appended GMS") || result.contains("updated managed rules")) {
             Log.i(TAG, "FCM repair ($reason): $result")
             serviceLog('I', "FCM", "repair reason=$reason result=${result.singleLine(2_000)}")
         }
@@ -208,6 +308,65 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             "system",
             MilletNoRestrictList.SETTING_NAME,
         ),
+        SETTINGS_COMMAND_TIMEOUT_SECONDS,
+    )
+
+    private fun ensureAurogon(desired: DesiredAurogon): String = synchronized(aurogonRepairLock) {
+        val initialRead = readAurogonEnable()
+        if (!initialRead.succeeded) {
+            return@synchronized "Aurogon: FAILED to read (${initialRead.summary})"
+        }
+        val candidate = AurogonConfig.merge(
+            initialRead.output,
+            desired.enabled,
+            desired.managed,
+            BuildConfig.APPLICATION_ID,
+        )
+        val current = initialRead.output.takeUnless { it == "null" }.orEmpty()
+        if (candidate == current && AurogonConfig.rulesEffective(current, desired.enabled)) {
+            return@synchronized "Aurogon: ${desired.enabled.size} enabled rules present"
+        }
+
+        val stableRead = readAurogonEnable()
+        if (!stableRead.succeeded) {
+            return@synchronized "Aurogon: FAILED stability read (${stableRead.summary})"
+        }
+        val stableCurrent = stableRead.output.takeUnless { it == "null" }.orEmpty()
+        if (stableCurrent != current) {
+            return@synchronized "Aurogon: changed concurrently; deferred"
+        }
+
+        val command = if (candidate.isEmpty()) {
+            listOf(SETTINGS_BINARY, "delete", "global", AurogonConfig.SETTING_NAME)
+        } else {
+            listOf(SETTINGS_BINARY, "put", "global", AurogonConfig.SETTING_NAME, candidate)
+        }
+        val write = runCommand(command, SETTINGS_COMMAND_TIMEOUT_SECONDS)
+        if (!write.succeeded) {
+            return@synchronized "Aurogon: FAILED to write (${write.summary})"
+        }
+
+        val verification = readAurogonEnable()
+        if (!verification.succeeded || !AurogonConfig.rulesEffective(verification.output, desired.enabled)) {
+            return@synchronized "Aurogon: FAILED verification (${verification.summary})"
+        }
+        val converged = AurogonConfig.merge(
+            verification.output,
+            desired.enabled,
+            desired.managed,
+            BuildConfig.APPLICATION_ID,
+        )
+        val verifiedValue = verification.output.takeUnless { it == "null" }.orEmpty()
+        if (converged != verifiedValue) {
+            return@synchronized "Aurogon: FAILED convergence verification"
+        }
+
+        serviceLog('I', "Aurogon", "updated desired=${desired.enabled.joinToString()} managed=${desired.managed.joinToString()} preservedValueLength=${candidate.length}")
+        "Aurogon: updated managed rules (${desired.enabled.size} enabled)"
+    }
+
+    private fun readAurogonEnable(): CommandResult = runCommand(
+        listOf(SETTINGS_BINARY, "get", "global", AurogonConfig.SETTING_NAME),
         SETTINGS_COMMAND_TIMEOUT_SECONDS,
     )
 
@@ -378,6 +537,11 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                 else -> "exit $exitCode"
             }
     }
+
+    private data class DesiredAurogon(
+        val enabled: Set<String>,
+        val managed: Set<String>,
+    )
 
     companion object {
         private const val TAG = "PowerKeeperFix/Shizuku"

@@ -20,10 +20,14 @@ class EnforcementWorker(
             return Result.failure()
         }
         val settings = store.loadSettings()
+        if (!GuardSettingsStore.isPeriodicEnforcementEnabled(settings.intervalMinutes)) {
+            AppLog.i("Worker/Enforcement", "periodic enforcement disabled; skipping queued work")
+            return Result.success()
+        }
         val targetUserIds = store.loadEnabledAndroidUserIds()
         AppLog.i(
             "Worker/Enforcement",
-            "settings policy=${settings.wechatPolicy.persistedValue} users=${targetUserIds.joinToString()}",
+            "settings aurogon=${settings.aurogonEnabledPackages.size} periodic=${settings.appPolicies.values.count(AppPolicy::periodicEnforcement)} users=${targetUserIds.joinToString()}",
         )
 
         if (!isShizukuAvailable()) {
@@ -42,7 +46,9 @@ class EnforcementWorker(
 
         return try {
             val report = PrivilegedServiceClient.enforce(
-                settings.wechatPolicy,
+                settings.aurogonEnabledPackages,
+                settings.aurogonManagedPackages,
+                settings.appPolicies.values.filter(AppPolicy::periodicEnforcement),
                 targetUserIds,
                 trigger = "background:periodic-enforcement",
             )

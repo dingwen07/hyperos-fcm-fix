@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小米电量和性能 FCM 修复</string>
+    <string name="app_subtitle">HyperOS 后台管理</string>
+
+    <string name="unsupported_device">设备不受支持</string>
+    <string name="unsupported_device_description">本应用需要在运行 MIUI 或 HyperOS 的小米设备上，以机主用户身份使用。</string>
+
+    <string name="shizuku">Shizuku</string>
+    <string name="shizuku_checking">正在检查…</string>
+    <string name="shizuku_not_running">未运行</string>
+    <string name="shizuku_permission_required">需要授权</string>
+    <string name="shizuku_connected">已连接</string>
+    <string name="shizuku_description">通过 Shizuku，无需 Root 即可管理 HyperOS 的电量设置。</string>
+    <string name="grant_access">授予权限</string>
+    <string name="open_shizuku">打开 Shizuku</string>
+    <string name="manage">管理</string>
+
+    <string name="automatic_protection">自动保护</string>
+    <string name="protection_summary">保持 Google Play 服务可用，以确保通知及时送达。%1$s</string>
+    <string name="wechat_policy_off_status">微信电量策略已关闭。</string>
+    <plurals name="wechat_policy_active_status">
+        <item quantity="other">微信模式：%1$s · 已选用户：%2$d。</item>
+    </plurals>
+    <string name="applying">正在应用…</string>
+    <string name="apply_now">立即应用</string>
+
+    <string name="android_profiles">Android 用户</string>
+    <string name="android_profiles_description">选择应用微信电量策略的用户。默认启用机主和手机分身用户。</string>
+    <string name="android_profiles_empty">尚未保存用户。连接 Shizuku 后将自动加载。</string>
+    <string name="android_user_id">用户 %1$d</string>
+    <string name="refreshing">正在刷新…</string>
+    <string name="refresh_profiles">刷新用户</string>
+
+    <string name="google_play_services">Google Play 服务</string>
+    <string name="gms_status_not_checked">尚未检查状态</string>
+    <string name="gms_status_unavailable">状态不可用</string>
+    <string name="gms_status_protected">保护已启用</string>
+    <string name="gms_status_needs_attention">需要处理</string>
+    <string name="millet_no_restrict_description">不受 HyperOS 后台限制的应用列表。</string>
+    <string name="millet_no_restrict_empty">列表中没有应用。</string>
+    <string name="checking">正在检查…</string>
+    <string name="refresh_status">刷新状态</string>
+
+    <string name="wechat_battery_policy">微信电量策略</string>
+    <string name="wechat_battery_policy_description">选择微信在所选用户中如何在后台运行。</string>
+    <string name="recommended">推荐</string>
+    <string name="wechat_policy_off">关闭</string>
+    <string name="wechat_policy_off_description">不更改微信的电量设置。</string>
+    <string name="wechat_policy_optimized">优化</string>
+    <string name="wechat_policy_optimized_description">允许后台活动，但不使用“无限制”模式。</string>
+    <string name="wechat_policy_restricted">受限制</string>
+    <string name="wechat_policy_restricted_description">限制后台活动以节省更多电量，通知可能会延迟。</string>
+
+    <string name="check_frequency">检查频率</string>
+    <string name="check_frequency_description">定期刷新所选微信策略；连接 Shizuku 时会持续保护通知。</string>
+    <string name="interval_minutes">%1$d 分钟</string>
+    <string name="interval_one_hour">1 小时</string>
+    <plurals name="interval_hours">
+        <item quantity="other">%1$d 小时</item>
+    </plurals>
+
+    <string name="last_check">上次检查</string>
+    <string name="last_check_successful">成功 · %1$s</string>
+    <string name="last_check_attention">需要处理 · %1$s</string>
+    <string name="hide_details">隐藏详情</string>
+    <string name="view_technical_details">查看技术详情</string>
+
+    <string name="diagnostics">诊断信息</string>
+    <string name="diagnostics_description">用于故障排查和技术支持的记录。</string>
+    <string name="open_diagnostics">打开诊断信息</string>
+    <string name="back">返回</string>
+    <string name="refresh">刷新</string>
+    <string name="clear">清除</string>
+    <string name="diagnostics_sessions_description">最新记录显示在最前面。大型记录仅显示最后 200 KB。</string>
+    <string name="no_diagnostic_sessions">没有诊断记录。</string>
+    <string name="empty_log">（空记录）</string>
+    <string name="clear_diagnostics_title">清除诊断信息？</string>
+    <string name="clear_diagnostics_description">所有已保存的诊断记录都将被删除，并立即开始新的空记录。</string>
+    <string name="clearing">正在清除…</string>
+    <string name="cancel">取消</string>
+
+    <string name="shizuku_stopped_message">Shizuku 已停止，自动保护已暂停。</string>
+    <string name="shizuku_access_granted_message">已获得 Shizuku 权限，正在应用设置…</string>
+    <string name="shizuku_access_denied_message">Shizuku 授权被拒绝。</string>
+    <string name="start_shizuku_message">请启动 Shizuku，然后返回本应用。</string>
+    <string name="shizuku_access_already_granted_message">已获得 Shizuku 权限。</string>
+    <string name="shizuku_access_denied_previously_message">之前的授权已被拒绝，请在 Shizuku 中重新启用本应用。</string>
+    <string name="shizuku_request_failed_message">无法请求 Shizuku 权限：%1$s</string>
+    <string name="shizuku_not_installed_message">未安装 Shizuku。</string>
+    <string name="wechat_policy_changed_message">微信模式已更改为%1$s。</string>
+    <string name="frequency_changed_message">检查频率已更改为%1$s。</string>
+    <string name="applying_settings_message">正在应用设置…</string>
+    <string name="settings_applied_message">设置已应用。</string>
+    <string name="settings_partially_applied_message">部分设置需要处理，请查看上次检查或诊断信息。</string>
+    <string name="settings_failed_message">无法应用设置：%1$s</string>
+    <string name="no_android_profiles_error">系统未返回任何 Android 用户。</string>
+    <plurals name="android_profiles_found_message">
+        <item quantity="other">找到 %1$d 个 Android 用户。</item>
+    </plurals>
+    <string name="android_profiles_refresh_failed_message">无法刷新 Android 用户：%1$s</string>
+    <string name="android_profile_enabled_message">已为微信启用%1$s。</string>
+    <string name="android_profile_disabled_message">已为微信停用%1$s。</string>
+    <string name="android_user_fallback">用户 %1$d</string>
+    <string name="protection_status_failed_message">无法检查保护状态：%1$s</string>
+    <string name="unknown_error">未知错误</string>
+</resources>

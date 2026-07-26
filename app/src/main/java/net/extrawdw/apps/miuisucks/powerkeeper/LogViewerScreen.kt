@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,7 @@ fun LogViewerScreen(
     var confirmClear by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val emptySessionText = stringResource(R.string.empty_log)
 
     LaunchedEffect(refreshKey) {
         files = withContext(Dispatchers.IO) { AppLog.sessionFiles() }
@@ -82,20 +84,22 @@ fun LogViewerScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Logs") },
+                    title = { Text(stringResource(R.string.diagnostics)) },
                     navigationIcon = {
-                        TextButton(onClick = onDismiss, enabled = !clearing) { Text("Back") }
+                        TextButton(onClick = onDismiss, enabled = !clearing) {
+                            Text(stringResource(R.string.back))
+                        }
                     },
                     actions = {
                         TextButton(
                             onClick = {
                                 refreshKey++
                             },
-                        ) { Text("Refresh") }
+                        ) { Text(stringResource(R.string.refresh)) }
                         TextButton(
                             onClick = { confirmClear = true },
                             enabled = !clearing,
-                        ) { Text("Clear") }
+                        ) { Text(stringResource(R.string.clear)) }
                     },
                 )
             },
@@ -112,7 +116,7 @@ fun LogViewerScreen(
             ) {
                 item {
                     Text(
-                        "Newest sessions first. Each file combines background-worker and privileged Shizuku events. Very large files show their latest 200 KB.",
+                        stringResource(R.string.diagnostics_sessions_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp),
@@ -121,7 +125,7 @@ fun LogViewerScreen(
                 if (files.isEmpty()) {
                     item {
                         Text(
-                            "No log sessions found.",
+                            stringResource(R.string.no_diagnostic_sessions),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -150,14 +154,14 @@ fun LogViewerScreen(
                     TopAppBar(
                         title = { Text(file.name) },
                         navigationIcon = {
-                            TextButton(onClick = closeFile) { Text("Back") }
+                            TextButton(onClick = closeFile) { Text(stringResource(R.string.back)) }
                         },
                         actions = {
                             TextButton(
                                 onClick = {
                                     refreshKey++
                                 },
-                            ) { Text("Refresh") }
+                            ) { Text(stringResource(R.string.refresh)) }
                         },
                     )
                 },
@@ -168,7 +172,7 @@ fun LogViewerScreen(
                         .padding(innerPadding),
                 ) {
                     Text(
-                        text = selectedContent.ifEmpty { "(empty log)" },
+                        text = selectedContent.ifEmpty { emptySessionText },
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
@@ -187,8 +191,8 @@ fun LogViewerScreen(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { if (!clearing) confirmClear = false },
-            title = { Text("Clear logs?") },
-            text = { Text("All saved log sessions will be deleted. A new empty session will start immediately.") },
+            title = { Text(stringResource(R.string.clear_diagnostics_title)) },
+            text = { Text(stringResource(R.string.clear_diagnostics_description)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -203,13 +207,17 @@ fun LogViewerScreen(
                         }
                     },
                     enabled = !clearing,
-                ) { Text(if (clearing) "Clearing…" else "Clear") }
+                ) {
+                    Text(
+                        stringResource(if (clearing) R.string.clearing else R.string.clear),
+                    )
+                }
             },
             dismissButton = {
                 TextButton(
                     onClick = { confirmClear = false },
                     enabled = !clearing,
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

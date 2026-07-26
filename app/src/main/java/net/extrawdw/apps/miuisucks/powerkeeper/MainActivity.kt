@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -54,10 +55,17 @@ import rikka.shizuku.Shizuku
 import java.text.DateFormat
 import java.util.Date
 
+enum class ShizukuConnectionState {
+    CHECKING,
+    NOT_RUNNING,
+    PERMISSION_REQUIRED,
+    CONNECTED,
+}
+
 data class ShizukuStatus(
     val available: Boolean = false,
     val granted: Boolean = false,
-    val summary: String = "Checking Shizuku…",
+    val connectionState: ShizukuConnectionState = ShizukuConnectionState.CHECKING,
 )
 
 data class GuardUiState(
@@ -87,16 +95,16 @@ class MainActivity : ComponentActivity() {
         if (uiState.shizuku.granted) applyNow()
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        refreshState("Shizuku stopped. Automatic checks are paused.", messageIsError = true)
+        refreshState(getString(R.string.shizuku_stopped_message), messageIsError = true)
     }
     private val permissionResultListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode != SHIZUKU_PERMISSION_REQUEST) return@OnRequestPermissionResultListener
         val granted = grantResult == PackageManager.PERMISSION_GRANTED
         refreshState(
             message = if (granted) {
-                "Shizuku access granted. Applying your settings…"
+                getString(R.string.shizuku_access_granted_message)
             } else {
-                "Shizuku access was denied."
+                getString(R.string.shizuku_access_denied_message)
             },
             messageIsError = !granted,
         )
@@ -109,9 +117,10 @@ class MainActivity : ComponentActivity() {
 
         val compatibility = XiaomiCompatibility.check(applicationContext)
         if (!compatibility.supported) {
+            AppLog.e("Compatibility", compatibility.reason)
             setContent {
                 MIUIPowerKeeperFixTheme {
-                    UnsupportedDeviceScreen(compatibility.reason)
+                    UnsupportedDeviceScreen()
                 }
             }
             return
@@ -173,15 +182,15 @@ class MainActivity : ComponentActivity() {
         val granted = available && runCatching {
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
-        val summary = when {
-            !available -> "Not running"
-            !granted -> "Permission required"
-            else -> "Connected"
+        val connectionState = when {
+            !available -> ShizukuConnectionState.NOT_RUNNING
+            !granted -> ShizukuConnectionState.PERMISSION_REQUIRED
+            else -> ShizukuConnectionState.CONNECTED
         }
 
         uiState = uiState.copy(
             settings = settingsStore.loadSettings(),
-            shizuku = ShizukuStatus(available, granted, summary),
+            shizuku = ShizukuStatus(available, granted, connectionState),
             lastRun = settingsStore.loadLastRun(),
             message = message,
             messageIsError = messageIsError,
@@ -191,18 +200,21 @@ class MainActivity : ComponentActivity() {
     private fun requestShizukuAccess() {
         if (!uiState.shizuku.available) {
             openShizuku()
-            uiState = uiState.copy(message = "Start Shizuku, then return here.", messageIsError = false)
+            uiState = uiState.copy(message = getString(R.string.start_shizuku_message), messageIsError = false)
             return
         }
         if (uiState.shizuku.granted) {
-            uiState = uiState.copy(message = "Shizuku access is already granted.", messageIsError = false)
+            uiState = uiState.copy(
+                message = getString(R.string.shizuku_access_already_granted_message),
+                messageIsError = false,
+            )
             return
         }
         runCatching {
             if (Shizuku.shouldShowRequestPermissionRationale()) {
                 openShizuku()
                 uiState = uiState.copy(
-                    message = "Authorization was denied previously. Re-enable this app in Shizuku.",
+                    message = getString(R.string.shizuku_access_denied_previously_message),
                     messageIsError = true,
                 )
             } else {
@@ -210,7 +222,10 @@ class MainActivity : ComponentActivity() {
             }
         }.onFailure {
             uiState = uiState.copy(
-                message = "Could not request Shizuku access: ${it.message}",
+                message = getString(
+                    R.string.shizuku_request_failed_message,
+                    it.message ?: getString(R.string.unknown_error),
+                ),
                 messageIsError = true,
             )
         }
@@ -221,21 +236,27 @@ class MainActivity : ComponentActivity() {
         if (launchIntent != null) {
             startActivity(launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } else {
-            uiState = uiState.copy(message = "Shizuku is not installed.", messageIsError = true)
+            uiState = uiState.copy(message = getString(R.string.shizuku_not_installed_message), messageIsError = true)
         }
     }
 
     private fun setWechatPolicy(policy: WechatPolicy) {
         if (policy == uiState.settings.wechatPolicy) return
         settingsStore.setWechatPolicy(policy)
-        refreshState("WeChat policy changed to ${policy.title}.", messageIsError = false)
+        refreshState(
+            getString(R.string.wechat_policy_changed_message, getString(policy.titleRes)),
+            messageIsError = false,
+        )
         if (uiState.shizuku.granted) applyNow()
     }
 
     private fun setInterval(minutes: Long) {
         settingsStore.setIntervalMinutes(minutes)
         EnforcementScheduler.schedule(applicationContext, minutes)
-        refreshState("Check frequency changed to ${formatInterval(minutes)}.", messageIsError = false)
+        refreshState(
+            getString(R.string.frequency_changed_message, formatInterval(minutes)),
+            messageIsError = false,
+        )
     }
 
     private fun maybeApplyStaleSettings() {
@@ -263,7 +284,11 @@ class MainActivity : ComponentActivity() {
         val targetUserIds = settings.androidUsers
             .filter(AndroidUserSelection::enabled)
             .map(AndroidUserSelection::userId)
-        uiState = uiState.copy(applying = true, message = "Applying settings…", messageIsError = false)
+        uiState = uiState.copy(
+            applying = true,
+            message = getString(R.string.applying_settings_message),
+            messageIsError = false,
+        )
         lifecycleScope.launch {
             runCatching {
                 PrivilegedServiceClient.enforce(settings.wechatPolicy, targetUserIds, TRIGGER_UI_APPLY)
@@ -274,13 +299,22 @@ class MainActivity : ComponentActivity() {
                     uiState = uiState.copy(
                         applying = false,
                         lastRun = settingsStore.loadLastRun(),
-                        message = if (succeeded) "Settings applied." else "Some settings could not be applied. View the details below.",
+                        message = getString(
+                            if (succeeded) {
+                                R.string.settings_applied_message
+                            } else {
+                                R.string.settings_partially_applied_message
+                            },
+                        ),
                         messageIsError = !succeeded,
                     )
                     checkMilletValue()
                 }
                 .onFailure { error ->
-                    val report = "Enforcement failed: ${error.message ?: error.javaClass.simpleName}"
+                    val report = getString(
+                        R.string.settings_failed_message,
+                        error.message ?: error.javaClass.simpleName,
+                    )
                     settingsStore.saveLastRun(false, report)
                     uiState = uiState.copy(
                         applying = false,
@@ -302,11 +336,15 @@ class MainActivity : ComponentActivity() {
                 val output = PrivilegedServiceClient.listAndroidUsers(TRIGGER_UI_USERS)
                 require(!output.startsWith("FAILED:")) { output }
                 val discovered = AndroidUserSelections.parsePmListUsers(output)
-                require(discovered.isNotEmpty()) { "No Android users were returned by PackageManager." }
+                require(discovered.isNotEmpty()) { getString(R.string.no_android_profiles_error) }
                 settingsStore.mergeAndSaveAndroidUsers(discovered)
             }.onSuccess { users ->
                 refreshState(
-                    message = "Found ${users.size} Android ${if (users.size == 1) "user" else "users"}.",
+                    message = resources.getQuantityString(
+                        R.plurals.android_profiles_found_message,
+                        users.size,
+                        users.size,
+                    ),
                     messageIsError = false,
                 )
                 uiState = uiState.copy(refreshingAndroidUsers = false)
@@ -317,7 +355,10 @@ class MainActivity : ComponentActivity() {
                 applyAfterAndroidUserRefresh = false
                 uiState = uiState.copy(
                     refreshingAndroidUsers = false,
-                    message = "Could not refresh Android users: ${error.message}",
+                    message = getString(
+                        R.string.android_profiles_refresh_failed_message,
+                        error.message ?: getString(R.string.unknown_error),
+                    ),
                     messageIsError = true,
                 )
             }
@@ -327,8 +368,12 @@ class MainActivity : ComponentActivity() {
     private fun setAndroidUserEnabled(userId: Int, enabled: Boolean) {
         settingsStore.setAndroidUserEnabled(userId, enabled)
         val user = settingsStore.loadAndroidUsers().firstOrNull { it.userId == userId }
+        val displayName = user?.name ?: getString(R.string.android_user_fallback, userId)
         refreshState(
-            message = "${user?.name ?: "User $userId"} ${if (enabled) "enabled" else "disabled"} for WeChat.",
+            message = getString(
+                if (enabled) R.string.android_profile_enabled_message else R.string.android_profile_disabled_message,
+                displayName,
+            ),
             messageIsError = false,
         )
         if (uiState.shizuku.granted) applyNow()
@@ -345,14 +390,21 @@ class MainActivity : ComponentActivity() {
                     uiState = uiState.copy(
                         milletNoRestrictValue = value,
                         checkingMilletValue = false,
-                        message = if (failed) value else uiState.message,
+                        message = if (failed) {
+                            getString(R.string.protection_status_failed_message, value.removePrefix("FAILED:").trim())
+                        } else {
+                            uiState.message
+                        },
                         messageIsError = if (failed) true else uiState.messageIsError,
                     )
                 }
                 .onFailure { error ->
                     uiState = uiState.copy(
                         checkingMilletValue = false,
-                        message = "Could not read ${MilletNoRestrictList.SETTING_NAME}: ${error.message}",
+                        message = getString(
+                            R.string.protection_status_failed_message,
+                            error.message ?: getString(R.string.unknown_error),
+                        ),
                         messageIsError = true,
                     )
                 }
@@ -364,6 +416,16 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             runCatching { PrivilegedServiceClient.flushServiceLogs(TRIGGER_UI_LOGS) }
         }
+    }
+
+    private fun formatInterval(minutes: Long): String = when (minutes) {
+        60L -> getString(R.string.interval_one_hour)
+        in 0L..59L -> getString(R.string.interval_minutes, minutes)
+        else -> resources.getQuantityString(
+            R.plurals.interval_hours,
+            (minutes / 60L).toInt(),
+            minutes / 60L,
+        )
     }
 
     companion object {
@@ -398,7 +460,7 @@ private fun GuardApp(
                     Column {
                         Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                         Text(
-                            "WeChat policy + background FCM",
+                            stringResource(R.string.app_subtitle),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -473,7 +535,7 @@ private fun GuardApp(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun UnsupportedDeviceScreen(reason: String) {
+private fun UnsupportedDeviceScreen() {
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
     ) { innerPadding ->
@@ -486,20 +548,14 @@ private fun UnsupportedDeviceScreen(reason: String) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Unsupported device",
+                stringResource(R.string.unsupported_device),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "This app is designed for Xiaomi devices running MIUI or HyperOS.",
+                stringResource(R.string.unsupported_device_description),
                 style = MaterialTheme.typography.bodyLarge,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                reason,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
             )
         }
     }
@@ -511,6 +567,14 @@ private fun ShizukuCard(
     onRequestShizuku: () -> Unit,
     onOpenShizuku: () -> Unit,
 ) {
+    val statusText = stringResource(
+        when (state.shizuku.connectionState) {
+            ShizukuConnectionState.CHECKING -> R.string.shizuku_checking
+            ShizukuConnectionState.NOT_RUNNING -> R.string.shizuku_not_running
+            ShizukuConnectionState.PERMISSION_REQUIRED -> R.string.shizuku_permission_required
+            ShizukuConnectionState.CONNECTED -> R.string.shizuku_connected
+        },
+    )
     val containerColor = if (state.shizuku.granted) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -524,20 +588,24 @@ private fun ShizukuCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Shizuku", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(state.shizuku.summary, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.shizuku), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(statusText, style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Shizuku lets this app manage HyperOS battery settings without root.",
+                stringResource(R.string.shizuku_description),
                 style = MaterialTheme.typography.bodySmall,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (!state.shizuku.granted) {
                     Button(onClick = onRequestShizuku) {
-                        Text(if (state.shizuku.available) "Grant access" else "Open Shizuku")
+                        Text(
+                            stringResource(
+                                if (state.shizuku.available) R.string.grant_access else R.string.open_shizuku,
+                            ),
+                        )
                     }
                 }
                 if (state.shizuku.available) {
-                    OutlinedButton(onClick = onOpenShizuku) { Text("Manage") }
+                    OutlinedButton(onClick = onOpenShizuku) { Text(stringResource(R.string.manage)) }
                 }
             }
         }
@@ -552,18 +620,27 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
         state.settings.androidUsers.count(AndroidUserSelection::enabled)
     }
     val wechatStatus = if (state.settings.wechatPolicy == WechatPolicy.DISABLED) {
-        "WeChat policy changes are off."
+        stringResource(R.string.wechat_policy_off_status)
     } else {
-        "WeChat ${state.settings.wechatPolicy.title.lowercase()} is active for $enabledUserCount selected ${if (enabledUserCount == 1) "user" else "users"}."
+        pluralStringResource(
+            R.plurals.wechat_policy_active_status,
+            enabledUserCount,
+            stringResource(state.settings.wechatPolicy.titleRes),
+            enabledUserCount,
+        )
     }
-    val statusText = "PowerKeeper FCM protection promptly restores Google Play services to HyperOS's no-restrictions list. $wechatStatus"
+    val statusText = stringResource(R.string.protection_summary, wechatStatus)
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Automatic protection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.automatic_protection),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 statusText,
                 style = MaterialTheme.typography.bodyMedium,
@@ -587,11 +664,11 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
                         strokeWidth = 2.dp,
                     )
                     Text(
-                        text = "Applying…",
+                        text = stringResource(R.string.applying),
                         modifier = Modifier.padding(start = 10.dp),
                     )
                 } else {
-                    Text("Apply now")
+                    Text(stringResource(R.string.apply_now))
                 }
             }
         }
@@ -607,16 +684,20 @@ private fun AndroidUsersCard(
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 10.dp)) {
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                Text("Android users", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    stringResource(R.string.android_profiles),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Select the Android users where the WeChat policy is enforced. User IDs, names, and selections are saved locally. Users 0 and 999 default to enabled.",
+                    stringResource(R.string.android_profiles_description),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             if (state.settings.androidUsers.isEmpty()) {
                 Text(
-                    "No saved user list. It will be queried once Shizuku is available.",
+                    stringResource(R.string.android_profiles_empty),
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -633,7 +714,7 @@ private fun AndroidUsersCard(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(user.name, fontWeight = FontWeight.Medium)
                             Text(
-                                "User ${user.userId}",
+                                stringResource(R.string.android_user_id, user.userId),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -655,7 +736,11 @@ private fun AndroidUsersCard(
                 onClick = onRefreshUsers,
                 enabled = state.shizuku.granted && !state.refreshingAndroidUsers && !state.applying,
             ) {
-                Text(if (state.refreshingAndroidUsers) "Refreshing…" else "Refresh user list")
+                Text(
+                    stringResource(
+                        if (state.refreshingAndroidUsers) R.string.refreshing else R.string.refresh_profiles,
+                    ),
+                )
             }
         }
     }
@@ -668,14 +753,20 @@ private fun MilletNoRestrictCard(
 ) {
     val rawValue = state.milletNoRestrictValue
     val readFailed = rawValue?.startsWith("FAILED:") == true
-    val gmsPresent = rawValue != null && !readFailed &&
-        MilletNoRestrictList.GMS_PACKAGE in MilletNoRestrictList.parse(rawValue)
-    val status = when {
-        rawValue == null -> "Not checked yet"
-        readFailed -> "Could not read the setting"
-        gmsPresent -> "Google Play services is present"
-        else -> "Google Play services is missing"
+    val packages = if (rawValue != null && !readFailed) {
+        MilletNoRestrictList.parse(rawValue)
+    } else {
+        emptyList()
     }
+    val gmsPresent = MilletNoRestrictList.GMS_PACKAGE in packages
+    val status = stringResource(
+        when {
+            rawValue == null -> R.string.gms_status_not_checked
+            readFailed -> R.string.gms_status_unavailable
+            gmsPresent -> R.string.gms_status_protected
+            else -> R.string.gms_status_needs_attention
+        },
+    )
     val statusColor = when {
         rawValue == null -> MaterialTheme.colorScheme.onSurfaceVariant
         readFailed || !gmsPresent -> MaterialTheme.colorScheme.error
@@ -694,16 +785,58 @@ private fun MilletNoRestrictCard(
             )
             Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor)
             Text(
-                rawValue ?: "Use Shizuku to read the current owner-user value.",
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                stringResource(R.string.millet_no_restrict_description),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (rawValue != null && !readFailed) {
+                if (packages.isEmpty()) {
+                    Text(
+                        stringResource(R.string.millet_no_restrict_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Column {
+                        packages.forEachIndexed { index, packageName ->
+                            if (index > 0) HorizontalDivider()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                if (packageName == MilletNoRestrictList.GMS_PACKAGE) {
+                                    Text(
+                                        stringResource(R.string.google_play_services),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                                Text(
+                                    packageName,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = if (packageName == MilletNoRestrictList.GMS_PACKAGE) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onCheckValue,
                 enabled = state.shizuku.granted && !state.checkingMilletValue,
             ) {
-                Text(if (state.checkingMilletValue) "Checking…" else "Check current value")
+                Text(
+                    stringResource(
+                        if (state.checkingMilletValue) R.string.checking else R.string.refresh_status,
+                    ),
+                )
             }
         }
     }
@@ -717,10 +850,14 @@ private fun WechatPolicyCard(
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 10.dp)) {
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                Text("WeChat battery policy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    stringResource(R.string.wechat_battery_policy),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Choose how WeChat can run in the background for the enabled Android users above.",
+                    stringResource(R.string.wechat_battery_policy_description),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -743,17 +880,18 @@ private fun WechatPolicyCard(
                     )
                     Column(modifier = Modifier.padding(start = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(policy.title, fontWeight = FontWeight.Medium)
+                            Text(stringResource(policy.titleRes), fontWeight = FontWeight.Medium)
                             if (policy == WechatPolicy.OPTIMIZED) {
                                 Text(
-                                    "  Recommended",
+                                    stringResource(R.string.recommended),
+                                    modifier = Modifier.padding(start = 8.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
                         Text(
-                            policy.description,
+                            stringResource(policy.descriptionRes),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -775,7 +913,11 @@ private fun IntervalCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Check frequency", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.check_frequency),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             options.chunked(2).forEach { rowOptions ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -792,7 +934,7 @@ private fun IntervalCard(
                 }
             }
             Text(
-                "How often the selected WeChat policy is reapplied. FCM uses its own two-second Shizuku monitor and a fixed 15-minute recovery job.",
+                stringResource(R.string.check_frequency_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -809,15 +951,24 @@ private fun LastRunCard(lastRun: LastRun) {
     }
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(18.dp)) {
-            Text("Last check", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.last_check),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
-                if (lastRun.succeeded) "Successful · $formattedTime" else "Needs attention · $formattedTime",
+                stringResource(
+                    if (lastRun.succeeded) R.string.last_check_successful else R.string.last_check_attention,
+                    formattedTime,
+                ),
                 color = if (lastRun.succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide details" else "View details")
+                Text(
+                    stringResource(if (expanded) R.string.hide_details else R.string.view_technical_details),
+                )
             }
             if (expanded) {
                 Text(
@@ -837,23 +988,32 @@ private fun LogsCard(onOpenLogs: () -> Unit) {
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Logs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Review WorkManager runs, Shizuku connections, privileged commands, and FCM repairs.",
+                stringResource(R.string.diagnostics),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.diagnostics_description),
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onOpenLogs,
             ) {
-                Text("Open log viewer")
+                Text(stringResource(R.string.open_diagnostics))
             }
         }
     }
 }
 
+@Composable
 private fun formatInterval(minutes: Long): String = when (minutes) {
-    15L -> "15 min"
-    60L -> "1 hour"
-    else -> "${minutes / 60} hours"
+    60L -> stringResource(R.string.interval_one_hour)
+    in 0L..59L -> stringResource(R.string.interval_minutes, minutes)
+    else -> pluralStringResource(
+        R.plurals.interval_hours,
+        (minutes / 60L).toInt(),
+        minutes / 60L,
+    )
 }

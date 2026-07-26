@@ -3,26 +3,26 @@ package net.extrawdw.apps.miuisucks.powerkeeper
 enum class WechatPolicy(
     val code: Int,
     val persistedValue: String,
-    val title: String,
-    val description: String,
+    val titleRes: Int,
+    val descriptionRes: Int,
 ) {
     DISABLED(
         code = 0,
         persistedValue = "disabled",
-        title = "Off",
-        description = "Leave WeChat's battery settings unchanged.",
+        titleRes = R.string.wechat_policy_off,
+        descriptionRes = R.string.wechat_policy_off_description,
     ),
     OPTIMIZED(
         code = 1,
         persistedValue = "optimized",
-        title = "Optimized",
-        description = "Allow background activity without using Unrestricted mode.",
+        titleRes = R.string.wechat_policy_optimized,
+        descriptionRes = R.string.wechat_policy_optimized_description,
     ),
     RESTRICTED(
         code = 2,
         persistedValue = "restricted",
-        title = "Restricted",
-        description = "Limit background activity to save more battery. Notifications may be delayed.",
+        titleRes = R.string.wechat_policy_restricted,
+        descriptionRes = R.string.wechat_policy_restricted_description,
     );
 
     companion object {

@@ -3,6 +3,7 @@ package net.extrawdw.apps.miuisucks.powerkeeper
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -33,9 +34,10 @@ object InstalledFcmApps {
         discovered -= context.packageName
         discovered -= ANDROID_SYSTEM_PACKAGE
 
-        return discovered.map { packageName ->
+        return discovered.mapNotNull { packageName ->
             runCatching {
                 val info = pm.getApplicationInfo(packageName, 0)
+                if (info.isSystemPackage) return@mapNotNull null
                 InstalledFcmApp(
                     packageName = packageName,
                     label = pm.getApplicationLabel(info).toString(),
@@ -49,6 +51,9 @@ object InstalledFcmApps {
     }
 
     private const val ANDROID_SYSTEM_PACKAGE = "android"
+
+    private val ApplicationInfo.isSystemPackage: Boolean
+        get() = flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
 
     private fun Drawable.toImageBitmap(sizePx: Int): ImageBitmap {
         (this as? BitmapDrawable)?.bitmap?.let { return it.scale(sizePx, sizePx).asImageBitmap() }

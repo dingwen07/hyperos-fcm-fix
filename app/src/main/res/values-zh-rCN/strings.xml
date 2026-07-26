@@ -5,6 +5,7 @@
 
     <string name="unsupported_device">设备不受支持</string>
     <string name="unsupported_device_description">本应用需要在运行 MIUI 或 HyperOS 的小米设备上，以机主用户身份使用。</string>
+    <string name="checking_device_compatibility">正在检查设备兼容性…</string>
 
     <string name="shizuku">Shizuku</string>
     <string name="shizuku_checking">正在检查…</string>

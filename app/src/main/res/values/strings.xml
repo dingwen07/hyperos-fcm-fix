@@ -5,6 +5,7 @@
 
     <string name="unsupported_device">Unsupported device</string>
     <string name="unsupported_device_description">This app requires the owner profile on a Xiaomi device running MIUI or HyperOS.</string>
+    <string name="checking_device_compatibility">Checking device compatibility…</string>
 
     <string name="shizuku">Shizuku</string>
     <string name="shizuku_checking">Checking…</string>

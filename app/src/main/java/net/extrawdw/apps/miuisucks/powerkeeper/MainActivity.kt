@@ -93,20 +93,39 @@ data class GuardUiState(
 
 private enum class GuardTab { HOME, APPS }
 
+private data class StartupData(
+    val compatibility: DeviceCompatibility,
+    val settingsStore: GuardSettingsStore? = null,
+    val settings: GuardSettings? = null,
+    val lastRun: LastRun? = null,
+)
+
 class MainActivity : ComponentActivity() {
     private lateinit var settingsStore: GuardSettingsStore
     private var uiState by mutableStateOf(GuardUiState())
+    private var compatibility by mutableStateOf<DeviceCompatibility?>(null)
     private var shizukuListenersRegistered = false
+    private var shizukuRefreshGeneration = 0
     private var applyAfterAndroidUserRefresh = false
     private var loadingInstalledApps = false
     private var stalePeriodicRunning = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshState()
-        if (uiState.shizuku.granted) maybeApplyStaleSettings()
+        refreshShizukuStatus { status ->
+            if (status.granted) maybeApplyStaleSettings()
+        }
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        shizukuRefreshGeneration++
         refreshState(getString(R.string.shizuku_stopped_message), messageIsError = true)
+        uiState = uiState.copy(
+            shizuku = ShizukuStatus(
+                available = false,
+                granted = false,
+                connectionState = ShizukuConnectionState.NOT_RUNNING,
+            ),
+        )
     }
     private val permissionResultListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode != SHIZUKU_PERMISSION_REQUEST) return@OnRequestPermissionResultListener
@@ -119,55 +138,84 @@ class MainActivity : ComponentActivity() {
             },
             messageIsError = !granted,
         )
-        if (granted) maybeApplyStaleSettings()
+        refreshShizukuStatus { status ->
+            if (status.granted) maybeApplyStaleSettings()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val compatibility = XiaomiCompatibility.check(applicationContext)
-        if (!compatibility.supported) {
-            AppLog.e("Compatibility", compatibility.reason)
-            setContent {
-                MIUIPowerKeeperFixTheme {
-                    UnsupportedDeviceScreen()
-                }
-            }
-            return
-        }
-
-        settingsStore = GuardSettingsStore(applicationContext)
-        EnforcementScheduler.schedule(applicationContext, settingsStore.loadSettings().intervalMinutes)
-
-        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-        Shizuku.addBinderDeadListener(binderDeadListener)
-        Shizuku.addRequestPermissionResultListener(permissionResultListener)
-        shizukuListenersRegistered = true
-        refreshState()
-
         setContent {
             MIUIPowerKeeperFixTheme {
-                GuardApp(
-                    state = uiState,
-                    onRequestShizuku = ::requestShizukuAccess,
-                    onOpenShizuku = ::openShizuku,
-                    onApplyNow = ::applyNow,
-                    onRefreshAndroidUsers = { refreshAndroidUsers() },
-                    onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
-                    onCheckMilletValue = ::checkMilletValue,
-                    onAppMasterChanged = ::setAppMasterEnabled,
-                    onAurogonChanged = ::setAurogonEnabled,
-                    onAutostartChanged = ::setAutostartEnabled,
-                    onPeriodicChanged = ::setPeriodicEnforcement,
-                    onDozeChanged = ::setDozePolicy,
-                    onIntervalSelected = ::setInterval,
-                    onLogsCleared = ::flushServiceLogs,
-                )
+                val checkedCompatibility = compatibility
+                when {
+                    checkedCompatibility == null -> StartupCheckScreen()
+                    !checkedCompatibility.supported -> UnsupportedDeviceScreen()
+                    else -> GuardApp(
+                        state = uiState,
+                        onRequestShizuku = ::requestShizukuAccess,
+                        onOpenShizuku = ::openShizuku,
+                        onApplyNow = ::applyNow,
+                        onRefreshAndroidUsers = { refreshAndroidUsers() },
+                        onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
+                        onCheckMilletValue = ::checkMilletValue,
+                        onAppMasterChanged = ::setAppMasterEnabled,
+                        onAurogonChanged = ::setAurogonEnabled,
+                        onAutostartChanged = ::setAutostartEnabled,
+                        onPeriodicChanged = ::setPeriodicEnforcement,
+                        onDozeChanged = ::setDozePolicy,
+                        onIntervalSelected = ::setInterval,
+                        onLogsCleared = ::flushServiceLogs,
+                    )
+                }
             }
         }
-        loadInstalledApps()
-        maybeApplyStaleSettings()
+
+        lifecycleScope.launch {
+            val startup = withContext(Dispatchers.IO) {
+                val checkedCompatibility = XiaomiCompatibility.check(applicationContext)
+                if (!checkedCompatibility.supported) {
+                    StartupData(checkedCompatibility)
+                } else {
+                    val store = GuardSettingsStore(applicationContext)
+                    val settings = store.loadSettings()
+                    EnforcementScheduler.schedule(applicationContext, settings.intervalMinutes)
+                    StartupData(
+                        compatibility = checkedCompatibility,
+                        settingsStore = store,
+                        settings = settings,
+                        lastRun = store.loadLastRun(),
+                    )
+                }
+            }
+
+            if (!startup.compatibility.supported) {
+                AppLog.e("Compatibility", startup.compatibility.reason)
+                compatibility = startup.compatibility
+                return@launch
+            }
+
+            settingsStore = requireNotNull(startup.settingsStore)
+            uiState = uiState.copy(
+                settings = requireNotNull(startup.settings),
+                lastRun = startup.lastRun,
+            )
+            Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+            Shizuku.addBinderDeadListener(binderDeadListener)
+            Shizuku.addRequestPermissionResultListener(permissionResultListener)
+            shizukuListenersRegistered = true
+            compatibility = startup.compatibility
+            loadInstalledApps()
+            refreshShizukuStatus { status ->
+                if (status.granted) {
+                    if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
+                    checkMilletValue()
+                    maybeApplyStaleSettings()
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -175,14 +223,17 @@ class MainActivity : ComponentActivity() {
         if (::settingsStore.isInitialized) {
             refreshState()
             loadInstalledApps()
-            if (uiState.shizuku.granted) {
-                if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
-                if (!uiState.applying) checkMilletValue()
+            refreshShizukuStatus { status ->
+                if (status.granted) {
+                    if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
+                    if (!uiState.applying) checkMilletValue()
+                }
             }
         }
     }
 
     override fun onDestroy() {
+        shizukuRefreshGeneration++
         if (shizukuListenersRegistered) {
             Shizuku.removeBinderReceivedListener(binderReceivedListener)
             Shizuku.removeBinderDeadListener(binderDeadListener)
@@ -195,23 +246,38 @@ class MainActivity : ComponentActivity() {
         message: String? = uiState.message,
         messageIsError: Boolean = uiState.messageIsError,
     ) {
-        val available = runCatching { Shizuku.pingBinder() && !Shizuku.isPreV11() }.getOrDefault(false)
-        val granted = available && runCatching {
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        }.getOrDefault(false)
-        val connectionState = when {
-            !available -> ShizukuConnectionState.NOT_RUNNING
-            !granted -> ShizukuConnectionState.PERMISSION_REQUIRED
-            else -> ShizukuConnectionState.CONNECTED
-        }
-
         uiState = uiState.copy(
             settings = settingsStore.loadSettings(),
-            shizuku = ShizukuStatus(available, granted, connectionState),
             lastRun = settingsStore.loadLastRun(),
             message = message,
             messageIsError = messageIsError,
         )
+    }
+
+    private fun refreshShizukuStatus(onRefreshed: (ShizukuStatus) -> Unit = {}) {
+        val generation = ++shizukuRefreshGeneration
+        lifecycleScope.launch {
+            val status = withContext(Dispatchers.IO) {
+                val available = runCatching {
+                    Shizuku.pingBinder() && !Shizuku.isPreV11()
+                }.getOrDefault(false)
+                val granted = available && runCatching {
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                }.getOrDefault(false)
+                ShizukuStatus(
+                    available = available,
+                    granted = granted,
+                    connectionState = when {
+                        !available -> ShizukuConnectionState.NOT_RUNNING
+                        !granted -> ShizukuConnectionState.PERMISSION_REQUIRED
+                        else -> ShizukuConnectionState.CONNECTED
+                    },
+                )
+            }
+            if (generation != shizukuRefreshGeneration) return@launch
+            uiState = uiState.copy(shizuku = status)
+            onRefreshed(status)
+        }
     }
 
     private fun requestShizukuAccess() {
@@ -400,7 +466,9 @@ class MainActivity : ComponentActivity() {
 
     private fun setInterval(minutes: Long) {
         settingsStore.setIntervalMinutes(minutes)
-        EnforcementScheduler.schedule(applicationContext, minutes)
+        lifecycleScope.launch(Dispatchers.IO) {
+            EnforcementScheduler.schedule(applicationContext, minutes)
+        }
         refreshState(
             getString(R.string.frequency_changed_message, formatInterval(minutes)),
             messageIsError = false,
@@ -623,6 +691,24 @@ class MainActivity : ComponentActivity() {
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
         private const val TRIGGER_UI_APP_CHANGE = "ui:app-change"
         private const val TRIGGER_UI_STALE_PERIODIC = "ui:stale-periodic"
+    }
+}
+
+@Composable
+private fun StartupCheckScreen() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator()
+        Spacer(Modifier.height(16.dp))
+        Text(
+            stringResource(R.string.checking_device_compatibility),
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

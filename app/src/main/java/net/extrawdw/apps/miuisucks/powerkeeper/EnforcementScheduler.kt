@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 object EnforcementScheduler {
     fun schedule(context: Context, intervalMinutes: Long) {
         val normalizedInterval = intervalMinutes.coerceAtLeast(GuardSettingsStore.MINIMUM_INTERVAL_MINUTES)
+        AppLog.i("Scheduler", "schedule enforcement=${normalizedInterval}m fcmRecovery=${GuardSettingsStore.MINIMUM_INTERVAL_MINUTES}m")
         val enforcementRequest = PeriodicWorkRequestBuilder<EnforcementWorker>(
             normalizedInterval,
             TimeUnit.MINUTES,
@@ -41,6 +42,7 @@ object EnforcementScheduler {
     }
 
     fun runNow(context: Context) {
+        AppLog.i("Scheduler", "enqueue immediate enforcement")
         val request = OneTimeWorkRequestBuilder<EnforcementWorker>()
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .addTag(WORK_TAG)
@@ -53,6 +55,7 @@ object EnforcementScheduler {
     }
 
     fun recoverFcmNow(context: Context) {
+        AppLog.i("Scheduler", "enqueue immediate FCM recovery")
         val request = OneTimeWorkRequestBuilder<FcmRecoveryWorker>()
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
             .addTag(WORK_TAG)

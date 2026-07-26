@@ -6,8 +6,16 @@ import android.content.Intent
 
 class GuardWakeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action !in SUPPORTED_ACTIONS) return
-        if (!XiaomiCompatibility.check(context.applicationContext).supported) return
+        AppLog.i("Receiver", "received action=${intent.action}")
+        if (intent.action !in SUPPORTED_ACTIONS) {
+            AppLog.w("Receiver", "ignored unsupported action=${intent.action}")
+            return
+        }
+        val compatibility = XiaomiCompatibility.check(context.applicationContext)
+        if (!compatibility.supported) {
+            AppLog.e("Receiver", "ignored unsupported device: ${compatibility.reason}")
+            return
+        }
 
         val store = GuardSettingsStore(context.applicationContext)
         val settings = store.loadSettings()
@@ -19,7 +27,10 @@ class GuardWakeReceiver : BroadcastReceiver() {
         val lastRun = store.loadLastRun()
         val staleAfterMillis = settings.intervalMinutes * 60_000L
         if (lastRun == null || System.currentTimeMillis() - lastRun.timestampMillis >= staleAfterMillis) {
+            AppLog.i("Receiver", "last enforcement stale; enqueueing immediate enforcement")
             EnforcementScheduler.runNow(context.applicationContext)
+        } else {
+            AppLog.i("Receiver", "last enforcement fresh; FCM recovery only")
         }
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.UserManager
 
 data class DeviceCompatibility(
     val supported: Boolean,
@@ -15,16 +16,18 @@ object XiaomiCompatibility {
 
     fun check(context: Context): DeviceCompatibility {
         val packageManager = context.packageManager
+        val ownerUser = context.getSystemService(UserManager::class.java).isSystemUser
         val manufacturerMatches = isXiaomiManufacturer(Build.MANUFACTURER)
         val libraryPresent = packageManager.systemSharedLibraryNames
             ?.contains(REQUIRED_SHARED_LIBRARY) == true
         val miuiSystemPresent = hasSystemPackage(packageManager, MIUI_SYSTEM_PACKAGE)
-        val supported = manufacturerMatches && libraryPresent && miuiSystemPresent
+        val supported = ownerUser && manufacturerMatches && libraryPresent && miuiSystemPresent
 
         val reason = if (supported) {
             "Xiaomi/HyperOS framework detected"
         } else {
             buildList {
+                if (!ownerUser) add("app must run as Android owner user 0")
                 if (!manufacturerMatches) add("manufacturer is ${Build.MANUFACTURER}")
                 if (!libraryPresent) add("$REQUIRED_SHARED_LIBRARY shared library is missing")
                 if (!miuiSystemPresent) add("$MIUI_SYSTEM_PACKAGE system package is missing")

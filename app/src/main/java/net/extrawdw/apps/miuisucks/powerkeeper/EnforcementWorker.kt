@@ -13,13 +13,21 @@ class EnforcementWorker(
     override suspend fun doWork(): Result {
         val store = GuardSettingsStore(applicationContext)
         val compatibility = XiaomiCompatibility.check(applicationContext)
+        AppLog.i("Worker/Enforcement", "start id=$id attempt=$runAttemptCount supported=${compatibility.supported}")
         if (!compatibility.supported) {
+            AppLog.e("Worker/Enforcement", "unsupported: ${compatibility.reason}")
             store.saveLastRun(false, "Unsupported device: ${compatibility.reason}")
             return Result.failure()
         }
         val settings = store.loadSettings()
+        val targetUserIds = store.loadEnabledAndroidUserIds()
+        AppLog.i(
+            "Worker/Enforcement",
+            "settings policy=${settings.wechatPolicy.persistedValue} users=${targetUserIds.joinToString()}",
+        )
 
         if (!isShizukuAvailable()) {
+            AppLog.w("Worker/Enforcement", "Shizuku unavailable; retrying")
             store.saveLastRun(false, "Shizuku is not running. The periodic worker will try again.")
             return Result.retry()
         }
@@ -27,6 +35,7 @@ class EnforcementWorker(
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
         if (!permissionGranted) {
+            AppLog.w("Worker/Enforcement", "Shizuku permission missing; finishing without retry")
             store.saveLastRun(false, "Shizuku permission has not been granted. Open the app to authorize it.")
             return Result.success()
         }
@@ -34,12 +43,15 @@ class EnforcementWorker(
         return try {
             val report = PrivilegedServiceClient.enforce(
                 settings.wechatPolicy,
-                store.loadEnabledAndroidUserIds(),
+                targetUserIds,
+                trigger = "background:periodic-enforcement",
             )
             val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
             store.saveLastRun(succeeded, report)
+            AppLog.i("Worker/Enforcement", "finish succeeded=$succeeded report=$report")
             Result.success()
         } catch (throwable: Throwable) {
+            AppLog.e("Worker/Enforcement", "failed; retrying", throwable)
             store.saveLastRun(false, "Enforcement failed: ${throwable.message ?: throwable.javaClass.simpleName}")
             Result.retry()
         }

@@ -11,20 +11,38 @@ class FcmRecoveryWorker(
     workerParameters: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParameters) {
     override suspend fun doWork(): Result {
-        if (!XiaomiCompatibility.check(applicationContext).supported) return Result.failure()
-        if (!isShizukuAvailable()) return Result.retry()
+        val compatibility = XiaomiCompatibility.check(applicationContext)
+        AppLog.i("Worker/FCM", "start id=$id attempt=$runAttemptCount supported=${compatibility.supported}")
+        if (!compatibility.supported) {
+            AppLog.e("Worker/FCM", "unsupported: ${compatibility.reason}")
+            return Result.failure()
+        }
+        if (!isShizukuAvailable()) {
+            AppLog.w("Worker/FCM", "Shizuku unavailable; retrying")
+            return Result.retry()
+        }
 
         val permissionGranted = runCatching {
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
-        if (!permissionGranted) return Result.success()
+        if (!permissionGranted) {
+            AppLog.w("Worker/FCM", "Shizuku permission missing; finishing without retry")
+            return Result.success()
+        }
 
-        return runCatching { PrivilegedServiceClient.startFcmProtection() }
+        return runCatching {
+            PrivilegedServiceClient.startFcmProtection("background:fcm-recovery")
+        }
             .fold(
                 onSuccess = { report ->
-                    if (report.contains("FAILED")) Result.retry() else Result.success()
+                    val failed = report.contains("FAILED")
+                    AppLog.i("Worker/FCM", "finish failed=$failed report=$report")
+                    if (failed) Result.retry() else Result.success()
                 },
-                onFailure = { Result.retry() },
+                onFailure = { error ->
+                    AppLog.e("Worker/FCM", "failed; retrying", error)
+                    Result.retry()
+                },
             )
     }
 

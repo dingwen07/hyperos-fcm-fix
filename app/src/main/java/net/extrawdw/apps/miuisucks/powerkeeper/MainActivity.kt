@@ -83,15 +83,18 @@ class MainActivity : ComponentActivity() {
     private var applyAfterAndroidUserRefresh = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        AppLog.i("UI/Shizuku", "binder received")
         refreshState()
         if (uiState.shizuku.granted) applyNow()
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        AppLog.w("UI/Shizuku", "binder died")
         refreshState("Shizuku stopped. Automatic checks are paused.", messageIsError = true)
     }
     private val permissionResultListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode != SHIZUKU_PERMISSION_REQUEST) return@OnRequestPermissionResultListener
         val granted = grantResult == PackageManager.PERMISSION_GRANTED
+        AppLog.i("UI/Shizuku", "permission result request=$requestCode granted=$granted")
         refreshState(
             message = if (granted) {
                 "Shizuku access granted. Applying your settings…"
@@ -108,6 +111,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val compatibility = XiaomiCompatibility.check(applicationContext)
+        AppLog.i("UI", "activity created supported=${compatibility.supported} reason=${compatibility.reason}")
         if (!compatibility.supported) {
             setContent {
                 MIUIPowerKeeperFixTheme {
@@ -118,6 +122,7 @@ class MainActivity : ComponentActivity() {
         }
 
         settingsStore = GuardSettingsStore(applicationContext)
+        AppLog.i("UI", "scheduling work interval=${settingsStore.loadSettings().intervalMinutes}m")
         EnforcementScheduler.schedule(applicationContext, settingsStore.loadSettings().intervalMinutes)
 
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
@@ -138,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     onCheckMilletValue = ::checkMilletValue,
                     onPolicySelected = ::setWechatPolicy,
                     onIntervalSelected = ::setInterval,
+                    onLogsCleared = ::flushServiceLogs,
                 )
             }
         }
@@ -156,6 +162,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        AppLog.i("UI", "activity destroyed")
         if (shizukuListenersRegistered) {
             Shizuku.removeBinderReceivedListener(binderReceivedListener)
             Shizuku.removeBinderDeadListener(binderDeadListener)
@@ -188,6 +195,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestShizukuAccess() {
+        AppLog.i(
+            "UI/Shizuku",
+            "access requested available=${uiState.shizuku.available} granted=${uiState.shizuku.granted}",
+        )
         if (!uiState.shizuku.available) {
             openShizuku()
             uiState = uiState.copy(message = "Start Shizuku, then return here.", messageIsError = false)
@@ -208,6 +219,7 @@ class MainActivity : ComponentActivity() {
                 Shizuku.requestPermission(SHIZUKU_PERMISSION_REQUEST)
             }
         }.onFailure {
+            AppLog.e("UI/Shizuku", "permission request failed", it)
             uiState = uiState.copy(
                 message = "Could not request Shizuku access: ${it.message}",
                 messageIsError = true,
@@ -216,22 +228,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openShizuku() {
+        AppLog.i("UI/Shizuku", "open manager requested")
         val launchIntent = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
         if (launchIntent != null) {
             startActivity(launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } else {
+            AppLog.w("UI/Shizuku", "manager not installed")
             uiState = uiState.copy(message = "Shizuku is not installed.", messageIsError = true)
         }
     }
 
     private fun setWechatPolicy(policy: WechatPolicy) {
         if (policy == uiState.settings.wechatPolicy) return
+        AppLog.i("UI/Settings", "WeChat policy changed from=${uiState.settings.wechatPolicy.persistedValue} to=${policy.persistedValue}")
         settingsStore.setWechatPolicy(policy)
         refreshState("WeChat policy changed to ${policy.title}.", messageIsError = false)
         if (uiState.shizuku.granted) applyNow()
     }
 
     private fun setInterval(minutes: Long) {
+        AppLog.i("UI/Settings", "interval changed to=${minutes}m")
         settingsStore.setIntervalMinutes(minutes)
         EnforcementScheduler.schedule(applicationContext, minutes)
         refreshState("Check frequency changed to ${formatInterval(minutes)}.", messageIsError = false)
@@ -242,7 +258,10 @@ class MainActivity : ComponentActivity() {
         val lastRun = settingsStore.loadLastRun()
         val intervalMillis = settingsStore.loadSettings().intervalMinutes * 60_000L
         if (lastRun == null || System.currentTimeMillis() - lastRun.timestampMillis >= intervalMillis) {
+            AppLog.i("UI/Apply", "stale enforcement detected; applying")
             applyNow()
+        } else {
+            AppLog.i("UI/Apply", "last enforcement still fresh; skipped automatic apply")
         }
     }
 
@@ -255,6 +274,7 @@ class MainActivity : ComponentActivity() {
 
         val settings = settingsStore.loadSettings()
         if (settings.androidUsers.isEmpty()) {
+            AppLog.i("UI/Apply", "user list empty; refreshing before apply")
             refreshAndroidUsers(applyAfterRefresh = true)
             return
         }
@@ -262,12 +282,19 @@ class MainActivity : ComponentActivity() {
         val targetUserIds = settings.androidUsers
             .filter(AndroidUserSelection::enabled)
             .map(AndroidUserSelection::userId)
+        AppLog.i(
+            "UI/Apply",
+            "start policy=${settings.wechatPolicy.persistedValue} users=${targetUserIds.joinToString()}",
+        )
         uiState = uiState.copy(applying = true, message = "Applying settings…", messageIsError = false)
         lifecycleScope.launch {
-            runCatching { PrivilegedServiceClient.enforce(settings.wechatPolicy, targetUserIds) }
+            runCatching {
+                PrivilegedServiceClient.enforce(settings.wechatPolicy, targetUserIds, TRIGGER_UI_APPLY)
+            }
                 .onSuccess { report ->
                     val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
                     settingsStore.saveLastRun(succeeded, report)
+                    AppLog.i("UI/Apply", "finish succeeded=$succeeded report=$report")
                     uiState = uiState.copy(
                         applying = false,
                         lastRun = settingsStore.loadLastRun(),
@@ -279,6 +306,7 @@ class MainActivity : ComponentActivity() {
                 .onFailure { error ->
                     val report = "Enforcement failed: ${error.message ?: error.javaClass.simpleName}"
                     settingsStore.saveLastRun(false, report)
+                    AppLog.e("UI/Apply", "failed", error)
                     uiState = uiState.copy(
                         applying = false,
                         lastRun = settingsStore.loadLastRun(),
@@ -293,15 +321,24 @@ class MainActivity : ComponentActivity() {
         if (applyAfterRefresh) applyAfterAndroidUserRefresh = true
         if (!uiState.shizuku.granted || uiState.refreshingAndroidUsers) return
 
+        AppLog.i("UI/Users", "refresh start applyAfterRefresh=$applyAfterRefresh")
         uiState = uiState.copy(refreshingAndroidUsers = true)
         lifecycleScope.launch {
             runCatching {
-                val output = PrivilegedServiceClient.listAndroidUsers()
+                val output = PrivilegedServiceClient.listAndroidUsers(TRIGGER_UI_USERS)
                 require(!output.startsWith("FAILED:")) { output }
                 val discovered = AndroidUserSelections.parsePmListUsers(output)
                 require(discovered.isNotEmpty()) { "No Android users were returned by PackageManager." }
+                AppLog.i(
+                    "UI/Users",
+                    "discovered=${discovered.joinToString { "${it.userId}:${it.name}" }} raw=$output",
+                )
                 settingsStore.mergeAndSaveAndroidUsers(discovered)
             }.onSuccess { users ->
+                AppLog.i(
+                    "UI/Users",
+                    "refresh finish saved=${users.joinToString { "${it.userId}:${it.name}:${it.enabled}" }}",
+                )
                 refreshState(
                     message = "Found ${users.size} Android ${if (users.size == 1) "user" else "users"}.",
                     messageIsError = false,
@@ -311,6 +348,7 @@ class MainActivity : ComponentActivity() {
                 applyAfterAndroidUserRefresh = false
                 if (shouldApply) applyNow()
             }.onFailure { error ->
+                AppLog.e("UI/Users", "refresh failed", error)
                 applyAfterAndroidUserRefresh = false
                 uiState = uiState.copy(
                     refreshingAndroidUsers = false,
@@ -324,6 +362,7 @@ class MainActivity : ComponentActivity() {
     private fun setAndroidUserEnabled(userId: Int, enabled: Boolean) {
         settingsStore.setAndroidUserEnabled(userId, enabled)
         val user = settingsStore.loadAndroidUsers().firstOrNull { it.userId == userId }
+        AppLog.i("UI/Users", "selection user=$userId name=${user?.name} enabled=$enabled")
         refreshState(
             message = "${user?.name ?: "User $userId"} ${if (enabled) "enabled" else "disabled"} for WeChat.",
             messageIsError = false,
@@ -334,11 +373,13 @@ class MainActivity : ComponentActivity() {
     private fun checkMilletValue() {
         if (!uiState.shizuku.granted || uiState.checkingMilletValue) return
 
+        AppLog.i("UI/MILLET", "read start")
         uiState = uiState.copy(checkingMilletValue = true)
         lifecycleScope.launch {
-            runCatching { PrivilegedServiceClient.getMilletNoRestrictValue() }
+            runCatching { PrivilegedServiceClient.getMilletNoRestrictValue(TRIGGER_UI_MILLET) }
                 .onSuccess { value ->
                     val failed = value.startsWith("FAILED:")
+                    AppLog.i("UI/MILLET", "read finish failed=$failed value=$value")
                     uiState = uiState.copy(
                         milletNoRestrictValue = value,
                         checkingMilletValue = false,
@@ -347,6 +388,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 .onFailure { error ->
+                    AppLog.e("UI/MILLET", "read failed", error)
                     uiState = uiState.copy(
                         checkingMilletValue = false,
                         message = "Could not read ${MilletNoRestrictList.SETTING_NAME}: ${error.message}",
@@ -356,9 +398,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun flushServiceLogs() {
+        AppLog.i("UI/Logs", "service log flush requested after clearing logs")
+        if (!uiState.shizuku.granted) {
+            AppLog.i("UI/Logs", "service log flush skipped; Shizuku access unavailable")
+            return
+        }
+        lifecycleScope.launch {
+            runCatching { PrivilegedServiceClient.flushServiceLogs(TRIGGER_UI_LOGS) }
+                .onSuccess { AppLog.i("UI/Logs", "service logs flushed") }
+                .onFailure { AppLog.e("UI/Logs", "service log flush failed", it) }
+        }
+    }
+
     companion object {
         private const val SHIZUKU_PERMISSION_REQUEST = 42
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+        private const val TRIGGER_UI_APPLY = "ui:apply"
+        private const val TRIGGER_UI_USERS = "ui:user-list"
+        private const val TRIGGER_UI_MILLET = "ui:millet-check"
+        private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
     }
 }
 
@@ -374,7 +433,9 @@ private fun GuardApp(
     onCheckMilletValue: () -> Unit,
     onPolicySelected: (WechatPolicy) -> Unit,
     onIntervalSelected: (Long) -> Unit,
+    onLogsCleared: () -> Unit,
 ) {
+    var showingLogs by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -436,7 +497,24 @@ private fun GuardApp(
             state.lastRun?.let { lastRun ->
                 item { LastRunCard(lastRun) }
             }
+            item {
+                LogsCard(
+                    onOpenLogs = {
+                        AppLog.i("UI/Logs", "viewer opened")
+                        showingLogs = true
+                    },
+                )
+            }
         }
+    }
+    if (showingLogs) {
+        LogViewerScreen(
+            onDismiss = {
+                AppLog.i("UI/Logs", "viewer closed")
+                showingLogs = false
+            },
+            onLogsCleared = onLogsCleared,
+        )
     }
 }
 
@@ -794,6 +872,28 @@ private fun LastRunCard(lastRun: LastRun) {
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogsCard(onOpenLogs: () -> Unit) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Logs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Review UI actions, WorkManager runs, Shizuku connections, privileged commands, and FCM repairs.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenLogs,
+            ) {
+                Text("Open log viewer")
             }
         }
     }

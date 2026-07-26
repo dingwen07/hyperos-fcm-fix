@@ -17,9 +17,9 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private val fcmRepairLock = Any()
     private var fcmPolling: ScheduledFuture<*>? = null
 
-    override fun enforce(wechatPolicy: Int): String {
+    override fun enforce(wechatPolicy: Int, targetUserIds: IntArray): String {
         val policy = WechatPolicy.fromCode(wechatPolicy)
-        val script = EnforcementScript.build(policy, BuildConfig.APPLICATION_ID)
+        val script = EnforcementScript.build(policy, BuildConfig.APPLICATION_ID, targetUserIds.toList())
         return buildString {
             appendLine(startFcmProtection())
             append(runScript(script))
@@ -51,6 +51,18 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             read.output.ifBlank { "(empty)" }
         } else {
             "FAILED: could not read ${MilletNoRestrictList.SETTING_NAME} (${read.summary})"
+        }
+    }
+
+    override fun listAndroidUsers(): String {
+        val result = runCommand(
+            listOf(PM_BINARY, "list", "users"),
+            USER_LIST_COMMAND_TIMEOUT_SECONDS,
+        )
+        return if (result.succeeded) {
+            result.output
+        } else {
+            "FAILED: could not list Android users (${result.summary})"
         }
     }
 
@@ -229,10 +241,12 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val COMMAND_TIMEOUT_SECONDS = 120L
         private const val SETTINGS_COMMAND_TIMEOUT_SECONDS = 10L
         private const val GREEZER_COMMAND_TIMEOUT_SECONDS = 20L
+        private const val USER_LIST_COMMAND_TIMEOUT_SECONDS = 10L
         private const val FCM_POLL_SECONDS = 2L
         private const val MAX_OUTPUT_LENGTH = 64_000
         private const val SETTINGS_BINARY = "/system/bin/settings"
         private const val SETTINGS_USER = "0"
         private const val DUMPSYS_BINARY = "/system/bin/dumpsys"
+        private const val PM_BINARY = "/system/bin/pm"
     }
 }

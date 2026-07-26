@@ -23,7 +23,7 @@ object PrivilegedServiceClient {
             .daemon(true)
             .processNameSuffix("guard")
             .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
+            .version(USER_SERVICE_VERSION)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -38,8 +38,8 @@ object PrivilegedServiceClient {
         }
     }
 
-    suspend fun enforce(policy: WechatPolicy): String = withService { connectedService ->
-        connectedService.enforce(policy.code)
+    suspend fun enforce(policy: WechatPolicy, targetUserIds: List<Int>): String = withService { connectedService ->
+        connectedService.enforce(policy.code, targetUserIds.toIntArray())
     }
 
     suspend fun startFcmProtection(): String = withService { connectedService ->
@@ -48,6 +48,10 @@ object PrivilegedServiceClient {
 
     suspend fun getMilletNoRestrictValue(): String = withService { connectedService ->
         connectedService.getMilletNoRestrictValue()
+    }
+
+    suspend fun listAndroidUsers(): String = withService { connectedService ->
+        connectedService.listAndroidUsers()
     }
 
     private suspend fun withService(operation: (IPrivilegedService) -> String): String = operationMutex.withLock {
@@ -89,4 +93,6 @@ object PrivilegedServiceClient {
     }
 
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
+    // Increment whenever the UserService AIDL surface changes so Shizuku replaces stale processes.
+    private const val USER_SERVICE_VERSION = 2
 }

@@ -2,12 +2,18 @@ package net.extrawdw.apps.miuisucks.powerkeeper
 
 object EnforcementScript {
     const val WECHAT_PACKAGE = "com.tencent.mm"
-    val TARGET_USERS = listOf(0, 999)
+    val DEFAULT_TARGET_USERS = AndroidUserSelections.DEFAULT_ENABLED_USER_IDS.sorted()
 
     private val selfProtectionMiuiOps = listOf(10007, 10008, 10021, 10023)
 
-    fun build(policy: WechatPolicy, applicationId: String): String {
+    fun build(
+        policy: WechatPolicy,
+        applicationId: String,
+        targetUsers: List<Int> = DEFAULT_TARGET_USERS,
+    ): String {
         require(applicationId.matches(Regex("[A-Za-z0-9_.]+"))) { "Invalid application ID" }
+        require(targetUsers.all { it >= 0 }) { "Invalid Android user ID" }
+        val normalizedTargetUsers = targetUsers.distinct().sorted()
 
         return buildString {
             appendLine("attempts=0")
@@ -29,24 +35,28 @@ object EnforcementScript {
             appendLine("}")
             appendLine("printf 'Battery policy enforcement\\n'")
             appendLine("printf 'shell_uid=%s wechat_policy=${policy.persistedValue}\\n' \"\$(id -u)\"")
-            appendWechatCommands(policy)
+            appendWechatCommands(policy, normalizedTargetUsers)
             appendSelfProtectionCommands(applicationId)
             appendLine("run_quiet cmd appops write-settings")
-            appendStatusCommands(policy)
+            appendStatusCommands(policy, normalizedTargetUsers)
             appendLine("printf 'summary: %s/%s commands succeeded; %s failed\\n' \"\$succeeded\" \"\$attempts\" \"\$failed\"")
             appendLine("if [ \"\$failed\" -eq 0 ]; then exit 0; else exit 2; fi")
         }
     }
 
-    private fun StringBuilder.appendWechatCommands(policy: WechatPolicy) {
+    private fun StringBuilder.appendWechatCommands(policy: WechatPolicy, targetUsers: List<Int>) {
         if (policy == WechatPolicy.DISABLED) {
             appendLine("printf 'WeChat policy: disabled; no WeChat state changed\\n'")
+            return
+        }
+        if (targetUsers.isEmpty()) {
+            appendLine("printf 'WeChat policy: no Android users selected; no WeChat state changed\\n'")
             return
         }
 
         val appOpMode = if (policy == WechatPolicy.OPTIMIZED) "allow" else "ignore"
         appendLine("wechat_found=0")
-        appendLine("for target_user in ${TARGET_USERS.joinToString(" ")}; do")
+        appendLine("for target_user in ${targetUsers.joinToString(" ")}; do")
         appendLine("  if is_installed \"\$target_user\" '$WECHAT_PACKAGE'; then")
         appendLine("    wechat_found=1")
         appendLine("    run_quiet cmd appops set --user \"\$target_user\" '$WECHAT_PACKAGE' RUN_IN_BACKGROUND '$appOpMode'")
@@ -73,10 +83,10 @@ object EnforcementScript {
         appendLine("run_quiet am set-standby-bucket --user 0 '$applicationId' active")
     }
 
-    private fun StringBuilder.appendStatusCommands(policy: WechatPolicy) {
-        if (policy == WechatPolicy.DISABLED) return
+    private fun StringBuilder.appendStatusCommands(policy: WechatPolicy, targetUsers: List<Int>) {
+        if (policy == WechatPolicy.DISABLED || targetUsers.isEmpty()) return
 
-        appendLine("for target_user in ${TARGET_USERS.joinToString(" ")}; do")
+        appendLine("for target_user in ${targetUsers.joinToString(" ")}; do")
         appendLine("  if is_installed \"\$target_user\" '$WECHAT_PACKAGE'; then")
         appendLine("    printf 'WeChat user %s background: ' \"\$target_user\"")
         appendLine("    cmd appops get --user \"\$target_user\" '$WECHAT_PACKAGE' RUN_ANY_IN_BACKGROUND 2>&1 | tr '\\n' ' '")

@@ -32,7 +32,10 @@ class EnforcementWorker(
         }
 
         return try {
-            val report = PrivilegedServiceClient.enforce(settings.wechatPolicy)
+            val report = PrivilegedServiceClient.enforce(
+                settings.wechatPolicy,
+                store.loadEnabledAndroidUserIds(),
+            )
             val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
             store.saveLastRun(succeeded, report)
             Result.success()

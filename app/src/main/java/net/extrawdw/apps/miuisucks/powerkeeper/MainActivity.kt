@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,12 +64,14 @@ data class GuardUiState(
     val settings: GuardSettings = GuardSettings(
         wechatPolicy = WechatPolicy.OPTIMIZED,
         intervalMinutes = GuardSettingsStore.DEFAULT_INTERVAL_MINUTES,
+        androidUsers = emptyList(),
     ),
     val shizuku: ShizukuStatus = ShizukuStatus(),
     val lastRun: LastRun? = null,
     val applying: Boolean = false,
     val milletNoRestrictValue: String? = null,
     val checkingMilletValue: Boolean = false,
+    val refreshingAndroidUsers: Boolean = false,
     val message: String? = null,
     val messageIsError: Boolean = false,
 )
@@ -77,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var settingsStore: GuardSettingsStore
     private var uiState by mutableStateOf(GuardUiState())
     private var shizukuListenersRegistered = false
+    private var applyAfterAndroidUserRefresh = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshState()
@@ -129,6 +133,8 @@ class MainActivity : ComponentActivity() {
                     onRequestShizuku = ::requestShizukuAccess,
                     onOpenShizuku = ::openShizuku,
                     onApplyNow = ::applyNow,
+                    onRefreshAndroidUsers = { refreshAndroidUsers() },
+                    onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                     onCheckMilletValue = ::checkMilletValue,
                     onPolicySelected = ::setWechatPolicy,
                     onIntervalSelected = ::setInterval,
@@ -142,7 +148,10 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::settingsStore.isInitialized) {
             refreshState()
-            if (uiState.shizuku.granted && !uiState.applying) checkMilletValue()
+            if (uiState.shizuku.granted) {
+                if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
+                if (!uiState.applying) checkMilletValue()
+            }
         }
     }
 
@@ -244,10 +253,18 @@ class MainActivity : ComponentActivity() {
         }
         if (uiState.applying) return
 
-        val policy = settingsStore.loadSettings().wechatPolicy
+        val settings = settingsStore.loadSettings()
+        if (settings.androidUsers.isEmpty()) {
+            refreshAndroidUsers(applyAfterRefresh = true)
+            return
+        }
+
+        val targetUserIds = settings.androidUsers
+            .filter(AndroidUserSelection::enabled)
+            .map(AndroidUserSelection::userId)
         uiState = uiState.copy(applying = true, message = "Applying settings…", messageIsError = false)
         lifecycleScope.launch {
-            runCatching { PrivilegedServiceClient.enforce(policy) }
+            runCatching { PrivilegedServiceClient.enforce(settings.wechatPolicy, targetUserIds) }
                 .onSuccess { report ->
                     val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
                     settingsStore.saveLastRun(succeeded, report)
@@ -270,6 +287,48 @@ class MainActivity : ComponentActivity() {
                     )
                 }
         }
+    }
+
+    private fun refreshAndroidUsers(applyAfterRefresh: Boolean = false) {
+        if (applyAfterRefresh) applyAfterAndroidUserRefresh = true
+        if (!uiState.shizuku.granted || uiState.refreshingAndroidUsers) return
+
+        uiState = uiState.copy(refreshingAndroidUsers = true)
+        lifecycleScope.launch {
+            runCatching {
+                val output = PrivilegedServiceClient.listAndroidUsers()
+                require(!output.startsWith("FAILED:")) { output }
+                val discovered = AndroidUserSelections.parsePmListUsers(output)
+                require(discovered.isNotEmpty()) { "No Android users were returned by PackageManager." }
+                settingsStore.mergeAndSaveAndroidUsers(discovered)
+            }.onSuccess { users ->
+                refreshState(
+                    message = "Found ${users.size} Android ${if (users.size == 1) "user" else "users"}.",
+                    messageIsError = false,
+                )
+                uiState = uiState.copy(refreshingAndroidUsers = false)
+                val shouldApply = applyAfterAndroidUserRefresh
+                applyAfterAndroidUserRefresh = false
+                if (shouldApply) applyNow()
+            }.onFailure { error ->
+                applyAfterAndroidUserRefresh = false
+                uiState = uiState.copy(
+                    refreshingAndroidUsers = false,
+                    message = "Could not refresh Android users: ${error.message}",
+                    messageIsError = true,
+                )
+            }
+        }
+    }
+
+    private fun setAndroidUserEnabled(userId: Int, enabled: Boolean) {
+        settingsStore.setAndroidUserEnabled(userId, enabled)
+        val user = settingsStore.loadAndroidUsers().firstOrNull { it.userId == userId }
+        refreshState(
+            message = "${user?.name ?: "User $userId"} ${if (enabled) "enabled" else "disabled"} for WeChat.",
+            messageIsError = false,
+        )
+        if (uiState.shizuku.granted) applyNow()
     }
 
     private fun checkMilletValue() {
@@ -310,6 +369,8 @@ private fun GuardApp(
     onRequestShizuku: () -> Unit,
     onOpenShizuku: () -> Unit,
     onApplyNow: () -> Unit,
+    onRefreshAndroidUsers: () -> Unit,
+    onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
     onPolicySelected: (WechatPolicy) -> Unit,
     onIntervalSelected: (Long) -> Unit,
@@ -345,6 +406,13 @@ private fun GuardApp(
                 ProtectionCard(
                     state = state,
                     onApplyNow = onApplyNow,
+                )
+            }
+            item {
+                AndroidUsersCard(
+                    state = state,
+                    onRefreshUsers = onRefreshAndroidUsers,
+                    onUserEnabledChanged = onAndroidUserEnabledChanged,
                 )
             }
             item {
@@ -447,10 +515,15 @@ private fun ShizukuCard(
 
 @Composable
 private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
+    val enabledUserCount = if (state.settings.androidUsers.isEmpty()) {
+        AndroidUserSelections.DEFAULT_ENABLED_USER_IDS.size
+    } else {
+        state.settings.androidUsers.count(AndroidUserSelection::enabled)
+    }
     val wechatStatus = if (state.settings.wechatPolicy == WechatPolicy.DISABLED) {
         "WeChat policy changes are off."
     } else {
-        "WeChat ${state.settings.wechatPolicy.title.lowercase()} is active for the main profile and XSpace."
+        "WeChat ${state.settings.wechatPolicy.title.lowercase()} is active for $enabledUserCount selected ${if (enabledUserCount == 1) "user" else "users"}."
     }
     val statusText = "PowerKeeper FCM protection promptly restores Google Play services to HyperOS's no-restrictions list. $wechatStatus"
 
@@ -489,6 +562,69 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
                 } else {
                     Text("Apply now")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AndroidUsersCard(
+    state: GuardUiState,
+    onRefreshUsers: () -> Unit,
+    onUserEnabledChanged: (Int, Boolean) -> Unit,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = 10.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                Text("Android users", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Select the Android users where the WeChat policy is enforced. User IDs, names, and selections are saved locally. Users 0 and 999 default to enabled.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (state.settings.androidUsers.isEmpty()) {
+                Text(
+                    "No saved user list. It will be queried once Shizuku is available.",
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                state.settings.androidUsers.forEachIndexed { index, user ->
+                    if (index > 0) HorizontalDivider(modifier = Modifier.padding(horizontal = 18.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(user.name, fontWeight = FontWeight.Medium)
+                            Text(
+                                "User ${user.userId}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = user.enabled,
+                            enabled = !state.applying && !state.refreshingAndroidUsers,
+                            onCheckedChange = { enabled ->
+                                onUserEnabledChanged(user.userId, enabled)
+                            },
+                        )
+                    }
+                }
+            }
+            OutlinedButton(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                onClick = onRefreshUsers,
+                enabled = state.shizuku.granted && !state.refreshingAndroidUsers && !state.applying,
+            ) {
+                Text(if (state.refreshingAndroidUsers) "Refreshing…" else "Refresh user list")
             }
         }
     }
@@ -553,7 +689,7 @@ private fun WechatPolicyCard(
                 Text("WeChat battery policy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Choose how WeChat can run in the background. Changes apply to the main profile and XSpace when available.",
+                    "Choose how WeChat can run in the background for the enabled Android users above.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

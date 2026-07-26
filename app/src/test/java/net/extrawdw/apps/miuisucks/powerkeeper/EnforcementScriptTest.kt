@@ -20,6 +20,30 @@ class EnforcementScriptTest {
     }
 
     @Test
+    fun customUserSelectionReplacesDefaultUsers() {
+        val script = EnforcementScript.build(
+            WechatPolicy.OPTIMIZED,
+            applicationId,
+            targetUsers = listOf(10),
+        )
+
+        assertTrue(script.contains("for target_user in 10"))
+        assertFalse(script.contains("for target_user in 0 999"))
+    }
+
+    @Test
+    fun emptyUserSelectionDoesNotMutateWechat() {
+        val script = EnforcementScript.build(
+            WechatPolicy.OPTIMIZED,
+            applicationId,
+            targetUsers = emptyList(),
+        )
+
+        assertTrue(script.contains("no Android users selected"))
+        assertFalse(script.contains("cmd appops set --user \"\$target_user\" '${EnforcementScript.WECHAT_PACKAGE}'"))
+    }
+
+    @Test
     fun optimizedAllowsBackgroundButRemovesUnrestrictedAllowlist() {
         val script = EnforcementScript.build(WechatPolicy.OPTIMIZED, applicationId)
 

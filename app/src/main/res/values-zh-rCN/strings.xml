@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">HyperOS FCM 修复</string>
+    <string name="app_name">澎湃 FCM 修复</string>
     <string name="app_subtitle">HyperOS 后台管理</string>
 
     <string name="unsupported_device">设备不受支持</string>

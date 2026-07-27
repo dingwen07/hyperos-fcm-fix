@@ -34,7 +34,6 @@ class FcmRecoveryWorker(
         return runCatching {
             PrivilegedServiceClient.startFcmProtection(
                 settings.aurogonEnabledPackages,
-                settings.aurogonManagedPackages,
                 "background:fcm-recovery",
             )
         }

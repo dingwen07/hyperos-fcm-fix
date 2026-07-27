@@ -45,7 +45,6 @@ object PrivilegedServiceClient {
 
     suspend fun enforce(
         aurogonPackages: Collection<String>,
-        managedAurogonPackages: Collection<String>,
         policies: Collection<AppPolicy>,
         targetUserIds: List<Int>,
         trigger: String,
@@ -73,15 +72,10 @@ object PrivilegedServiceClient {
                 .sortedBy(AppPolicy::packageName)
             connectedService.enforceBatched(
                 aurogonPackages.distinct().sorted().toTypedArray(),
-                managedAurogonPackages.distinct().sorted().toTypedArray(),
                 orderedPolicies.map(AppPolicy::packageName).toTypedArray(),
-                orderedPolicies.map {
-                    when {
-                        !it.autostartManaged -> AUTOSTART_UNMANAGED
-                        it.autostartEnabled -> AUTOSTART_ENABLED
-                        else -> AUTOSTART_DISABLED
-                    }
-                }.toIntArray(),
+                orderedPolicies.map(AppPolicy::autostartManaged).toBooleanArray(),
+                orderedPolicies.map(AppPolicy::autostartEnabled).toBooleanArray(),
+                orderedPolicies.map(AppPolicy::dozeManaged).toBooleanArray(),
                 orderedPolicies.map { it.dozePolicy.code }.toIntArray(),
                 targetUserIds.toIntArray(),
                 trigger,
@@ -96,26 +90,22 @@ object PrivilegedServiceClient {
 
     suspend fun startFcmProtection(
         aurogonPackages: Collection<String>,
-        managedAurogonPackages: Collection<String>,
         trigger: String,
     ): String =
         withService("startFcmProtection", trigger) { connectedService ->
             connectedService.startFcmProtection(
                 aurogonPackages.distinct().sorted().toTypedArray(),
-                managedAurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
             )
         }
 
     suspend fun reconcileAurogon(
         aurogonPackages: Collection<String>,
-        managedAurogonPackages: Collection<String>,
         trigger: String,
     ): String =
         withService("reconcileAurogon", trigger) { connectedService ->
             connectedService.reconcileAurogon(
                 aurogonPackages.distinct().sorted().toTypedArray(),
-                managedAurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
             )
         }
@@ -128,11 +118,9 @@ object PrivilegedServiceClient {
         withService("applyAppPolicy", trigger) { connectedService ->
             connectedService.applyAppPolicy(
                 policy.packageName,
-                when {
-                    !policy.autostartManaged -> AUTOSTART_UNMANAGED
-                    policy.autostartEnabled -> AUTOSTART_ENABLED
-                    else -> AUTOSTART_DISABLED
-                },
+                policy.autostartManaged,
+                policy.autostartEnabled,
+                policy.dozeManaged,
                 policy.dozePolicy.code,
                 targetUserIds.toIntArray(),
                 trigger,
@@ -231,8 +219,5 @@ object PrivilegedServiceClient {
 
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService AIDL surface changes so Shizuku replaces stale processes.
-    private const val USER_SERVICE_VERSION = 10
-    private const val AUTOSTART_UNMANAGED = -1
-    private const val AUTOSTART_DISABLED = 0
-    private const val AUTOSTART_ENABLED = 1
+    private const val USER_SERVICE_VERSION = 12
 }

@@ -24,7 +24,8 @@ object EnforcementScript {
         require(PACKAGE_NAME.matches(applicationId)) { "Invalid application ID" }
         require(policies.all { PACKAGE_NAME.matches(it.packageName) }) { "Invalid package name" }
         require(targetUsers.all { it >= 0 }) { "Invalid Android user ID" }
-        val normalizedPolicies = policies.associateBy(AppPolicy::packageName).values.sortedBy(AppPolicy::packageName)
+        val normalizedPolicies = policies.associateBy(AppPolicy::packageName).values
+            .sortedBy(AppPolicy::packageName)
         val normalizedTargetUsers = targetUsers.distinct().sorted()
 
         return buildString {
@@ -72,7 +73,7 @@ object EnforcementScript {
             )
             return
         }
-        val actionable = policies.filter { it.autostartManaged || it.dozePolicy != AppDozePolicy.OFF }
+        val actionable = policies.filter { it.autostartManaged || it.dozeManaged }
         if (actionable.isEmpty()) {
             appendLine("printf 'No per-app Autostart or AOSP battery policies selected\\n'")
             return
@@ -122,7 +123,10 @@ object EnforcementScript {
         appendLine("}")
     }
 
-    private fun StringBuilder.appendRuntimeAppCommands(policies: Collection<AppPolicy>, targetUsers: List<Int>) {
+    private fun StringBuilder.appendRuntimeAppCommands(
+        policies: Collection<AppPolicy>,
+        targetUsers: List<Int>,
+    ) {
         policies.forEachIndexed { index, policy ->
             val variable = "app_found_$index"
             appendLine("$variable=0")
@@ -130,12 +134,12 @@ object EnforcementScript {
             appendLine("  if is_installed \"\$target_user\" '${policy.packageName}'; then")
             appendLine("    $variable=1")
             appendPolicyMutations(policy, "\$target_user", "    ")
-            appendLine("    printf '${policy.packageName} user %s: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${policy.dozePolicy.persistedValue}\\n' \"\$target_user\"")
+            appendLine("    printf '${policy.packageName} user %s: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${if (policy.dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"}\\n' \"\$target_user\"")
             appendLine("  else")
             appendLine("    printf '${policy.packageName} user %s: skipped (not installed)\\n' \"\$target_user\"")
             appendLine("  fi")
             appendLine("done")
-            if (policy.dozePolicy != AppDozePolicy.OFF) {
+            if (policy.dozeManaged) {
                 val operation = if (policy.dozePolicy == AppDozePolicy.UNRESTRICTED) "+" else "-"
                 appendLine("if [ \"\$$variable\" -eq 1 ]; then")
                 appendLine("  run_quiet cmd deviceidle whitelist '$operation${policy.packageName}'")
@@ -151,18 +155,18 @@ object EnforcementScript {
         progressStartIndex: Int?,
     ) {
         policies.forEachIndexed { index, policy ->
-            if (policy.autostartManaged || policy.dozePolicy != AppDozePolicy.OFF) {
+            if (policy.autostartManaged || policy.dozeManaged) {
                 var installed = false
                 targetUsers.forEach { userId ->
                     if (policy.packageName in installedPackagesByUser[userId].orEmpty()) {
                         installed = true
                         appendPolicyMutations(policy, userId.toString(), "")
-                        appendLine("printf '${policy.packageName} user $userId: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${policy.dozePolicy.persistedValue}\\n'")
+                        appendLine("printf '${policy.packageName} user $userId: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${if (policy.dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"}\\n'")
                     } else {
                         appendLine("printf '${policy.packageName} user $userId: skipped (not installed)\\n'")
                     }
                 }
-                if (installed && policy.dozePolicy != AppDozePolicy.OFF) {
+                if (installed && policy.dozeManaged) {
                     val operation = if (policy.dozePolicy == AppDozePolicy.UNRESTRICTED) "+" else "-"
                     appendLine("run_quiet cmd deviceidle whitelist '$operation${policy.packageName}'")
                 }
@@ -175,13 +179,17 @@ object EnforcementScript {
         }
     }
 
-    private fun StringBuilder.appendPolicyMutations(policy: AppPolicy, userId: String, indent: String) {
+    private fun StringBuilder.appendPolicyMutations(
+        policy: AppPolicy,
+        userId: String,
+        indent: String,
+    ) {
         if (policy.autostartManaged) {
             val mode = if (policy.autostartEnabled) "allow" else "ignore"
             appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' '$MIUI_AUTOSTART_OP' '$mode'")
             appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' '$MIUI_AUTOSTART_SWITCH_OP' '$mode'")
         }
-        if (policy.dozePolicy != AppDozePolicy.OFF) {
+        if (policy.dozeManaged) {
             val mode = if (policy.dozePolicy == AppDozePolicy.RESTRICTED) "ignore" else "allow"
             appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' RUN_IN_BACKGROUND '$mode'")
             appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' RUN_ANY_IN_BACKGROUND '$mode'")

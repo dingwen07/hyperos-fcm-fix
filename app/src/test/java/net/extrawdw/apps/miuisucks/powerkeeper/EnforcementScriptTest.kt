@@ -8,7 +8,14 @@ import org.junit.Test
 class EnforcementScriptTest {
     private val applicationId = "net.extrawdw.apps.miuisucks.powerkeeper"
     private val autoUnrestrictedPackage = AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.first()
-    private val autoUnrestrictedPolicy = AppPolicyDefaults.forPackage(autoUnrestrictedPackage)
+    private val autoUnrestrictedPolicy = AppPolicy(
+        packageName = autoUnrestrictedPackage,
+        appEnabled = true,
+        autostartManaged = true,
+        autostartEnabled = true,
+        dozeManaged = true,
+        dozePolicy = AppDozePolicy.DEFAULT,
+    )
 
     @Test
     fun scriptTargetsOnlyOwnerAndXSpace() {
@@ -39,17 +46,27 @@ class EnforcementScriptTest {
     }
 
     @Test
-    fun optimizedBatteryPolicyAllowsBackgroundButRemovesUnrestrictedAllowlist() {
-        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.DEFAULT)
+    fun appOffResetLeavesAutostartUntouchedAndAppliesOptimizedBattery() {
+        val policy = AppPolicy(
+            "com.example.push",
+            dozeManaged = true,
+            dozePolicy = AppDozePolicy.DEFAULT,
+        )
         val script = EnforcementScript.build(listOf(policy), applicationId)
 
+        assertFalse(script.contains("'com.example.push' '10008'"))
+        assertFalse(script.contains("'com.example.push' '10053'"))
         assertTrue(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND 'allow'"))
         assertTrue(script.contains("whitelist '-com.example.push'"))
     }
 
     @Test
     fun unrestrictedBatteryPolicyAddsUnrestrictedAllowlist() {
-        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.UNRESTRICTED)
+        val policy = AppPolicy(
+            "com.example.push",
+            dozeManaged = true,
+            dozePolicy = AppDozePolicy.UNRESTRICTED,
+        )
         val script = EnforcementScript.build(listOf(policy), applicationId)
 
         assertTrue(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND 'allow'"))
@@ -84,7 +101,11 @@ class EnforcementScriptTest {
 
     @Test
     fun restrictedPolicyIgnoresArbitraryAppBackgroundOps() {
-        val policy = AppPolicy("com.example.push", dozePolicy = AppDozePolicy.RESTRICTED)
+        val policy = AppPolicy(
+            "com.example.push",
+            dozeManaged = true,
+            dozePolicy = AppDozePolicy.RESTRICTED,
+        )
         val script = EnforcementScript.build(listOf(policy), applicationId)
 
         assertTrue(script.contains("'com.example.push' RUN_IN_BACKGROUND 'ignore'"))
@@ -93,7 +114,12 @@ class EnforcementScriptTest {
 
     @Test
     fun offUnmanagedPolicyDoesNotMutateApp() {
-        val script = EnforcementScript.build(listOf(AppPolicy("com.example.push")), applicationId)
+        val policy = AppPolicy(
+            packageName = "com.example.push",
+            autostartEnabled = true,
+            dozePolicy = AppDozePolicy.UNRESTRICTED,
+        )
+        val script = EnforcementScript.build(listOf(policy), applicationId)
 
         assertTrue(script.contains("No per-app Autostart or AOSP battery policies selected"))
         assertFalse(script.contains("'com.example.push' RUN_ANY_IN_BACKGROUND"))
@@ -103,8 +129,8 @@ class EnforcementScriptTest {
     @Test
     fun unresolvedPoliciesQueryInstalledPackagesOnlyOncePerUser() {
         val policies = listOf(
-            AppPolicy("com.example.one", autostartEnabled = true, autostartManaged = true),
-            AppPolicy("com.example.two", autostartEnabled = true, autostartManaged = true),
+            AppPolicy("com.example.one", autostartManaged = true, autostartEnabled = true),
+            AppPolicy("com.example.two", autostartManaged = true, autostartEnabled = true),
         )
         val script = EnforcementScript.build(policies, applicationId, targetUsers = listOf(0, 999))
 
@@ -118,8 +144,9 @@ class EnforcementScriptTest {
     fun resolvedBatchDoesNotQueryPackagesAndTargetsOnlyInstalledUsers() {
         val policy = AppPolicy(
             "com.example.push",
-            autostartEnabled = true,
             autostartManaged = true,
+            autostartEnabled = true,
+            dozeManaged = true,
             dozePolicy = AppDozePolicy.DEFAULT,
         )
         val script = EnforcementScript.build(
@@ -155,7 +182,7 @@ class EnforcementScriptTest {
     @Test
     fun resolvedBatchEmitsPerAppProgressIncludingUnmanagedApps() {
         val policies = listOf(
-            AppPolicy("com.example.managed", autostartEnabled = true, autostartManaged = true),
+            AppPolicy("com.example.managed", autostartManaged = true, autostartEnabled = true),
             AppPolicy("com.example.unmanaged"),
         )
         val script = EnforcementScript.build(
@@ -186,7 +213,7 @@ class EnforcementScriptTest {
 
     @Test
     fun targetedPolicyDoesNotApplyManagerSelfProtection() {
-        val policy = AppPolicy("com.example.push", autostartEnabled = true, autostartManaged = true)
+        val policy = AppPolicy("com.example.push", autostartManaged = true, autostartEnabled = true)
         val script = EnforcementScript.build(
             listOf(policy),
             applicationId,
@@ -202,10 +229,11 @@ class EnforcementScriptTest {
     fun generatedScriptHasValidShellSyntax() {
         val policies = listOf(
             autoUnrestrictedPolicy,
-            AppPolicy("com.example.default", dozePolicy = AppDozePolicy.DEFAULT),
+            AppPolicy("com.example.default", dozeManaged = true, dozePolicy = AppDozePolicy.DEFAULT),
             AppPolicy(
                 "com.example.restricted",
                 autostartManaged = true,
+                dozeManaged = true,
                 dozePolicy = AppDozePolicy.RESTRICTED,
             ),
         )

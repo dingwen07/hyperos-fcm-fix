@@ -6,12 +6,6 @@ enum class AppDozePolicy(
     val titleRes: Int,
     val descriptionRes: Int,
 ) {
-    OFF(
-        code = 0,
-        persistedValue = "off",
-        titleRes = R.string.app_doze_off,
-        descriptionRes = R.string.app_doze_off_description,
-    ),
     UNRESTRICTED(
         code = 1,
         persistedValue = "unrestricted",
@@ -32,10 +26,10 @@ enum class AppDozePolicy(
     );
 
     companion object {
-        fun fromCode(code: Int): AppDozePolicy = entries.firstOrNull { it.code == code } ?: OFF
+        fun fromCode(code: Int): AppDozePolicy = entries.firstOrNull { it.code == code } ?: DEFAULT
 
         fun fromPersistedValue(value: String?): AppDozePolicy =
-            entries.firstOrNull { it.persistedValue == value } ?: OFF
+            entries.firstOrNull { it.persistedValue == value } ?: DEFAULT
     }
 }
 
@@ -43,33 +37,36 @@ data class AppPolicy(
     val packageName: String,
     val appEnabled: Boolean = false,
     val aurogonEnabled: Boolean = false,
-    val aurogonManaged: Boolean = false,
-    val autostartEnabled: Boolean = false,
     val autostartManaged: Boolean = false,
-    val dozePolicy: AppDozePolicy = AppDozePolicy.OFF,
-    val selectedDozePolicy: AppDozePolicy = AppDozePolicy.DEFAULT,
+    val autostartEnabled: Boolean = false,
+    val dozeManaged: Boolean = false,
+    val dozePolicy: AppDozePolicy = AppDozePolicy.DEFAULT,
     val periodicEnforcement: Boolean = false,
 ) {
-    fun withAppEnabled(enabled: Boolean): AppPolicy =
+    fun withAppEnabled(enabled: Boolean, initializeDefaults: Boolean = false): AppPolicy =
         if (!enabled) {
             copy(appEnabled = false)
-        } else if (!aurogonManaged) {
+        } else if (initializeDefaults) {
             copy(
                 appEnabled = true,
                 aurogonEnabled = true,
-                aurogonManaged = true,
-                autostartEnabled = true,
                 autostartManaged = true,
+                autostartEnabled = true,
             )
         } else {
             copy(appEnabled = true)
         }
 
-    fun withDozePolicy(policy: AppDozePolicy): AppPolicy =
-        if (policy == AppDozePolicy.OFF) {
-            copy(dozePolicy = AppDozePolicy.OFF)
+    fun appOffCleanupPolicy(): AppPolicy? =
+        if (dozeManaged) {
+            AppPolicy(
+                packageName = packageName,
+                appEnabled = true,
+                dozeManaged = true,
+                dozePolicy = AppDozePolicy.DEFAULT,
+            )
         } else {
-            copy(dozePolicy = policy, selectedDozePolicy = policy)
+            null
         }
 }
 
@@ -88,13 +85,13 @@ object AppPolicyDefaults {
                 packageName = packageName,
                 appEnabled = true,
                 aurogonEnabled = true,
-                aurogonManaged = true,
-                autostartEnabled = true,
                 autostartManaged = true,
+                autostartEnabled = true,
+                dozeManaged = true,
                 dozePolicy = AppDozePolicy.DEFAULT,
                 periodicEnforcement = true,
             )
         } else {
-            AppPolicy(packageName, dozePolicy = AppDozePolicy.OFF)
+            AppPolicy(packageName)
         }
 }

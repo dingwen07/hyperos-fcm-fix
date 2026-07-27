@@ -53,8 +53,10 @@ fun AppManagementScreen(
     modifier: Modifier = Modifier,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
+    onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -115,8 +117,10 @@ fun AppManagementScreen(
             policy = policies.policyFor(app.packageName),
             onDismiss = { configFor = null },
             onAurogonChanged = onAurogonChanged,
+            onAutostartManagedChanged = onAutostartManagedChanged,
             onAutostartChanged = onAutostartChanged,
             onPeriodicChanged = onPeriodicChanged,
+            onDozeManagedChanged = onDozeManagedChanged,
             onDozeChanged = onDozeChanged,
         )
     }
@@ -191,8 +195,10 @@ private fun AppPolicySheet(
     policy: AppPolicy,
     onDismiss: () -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
+    onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -215,9 +221,28 @@ private fun AppPolicySheet(
             PolicySwitchRow(
                 title = stringResource(R.string.miui_autostart),
                 description = stringResource(R.string.miui_autostart_description),
-                checked = policy.autostartEnabled,
-                onCheckedChange = { onAutostartChanged(app.packageName, it) },
+                checked = policy.autostartManaged,
+                onCheckedChange = { onAutostartManagedChanged(app.packageName, it) },
             )
+            if (policy.autostartManaged) {
+                val autostartValues = listOf(true, false)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    autostartValues.forEachIndexed { index, enabled ->
+                        SegmentedButton(
+                            selected = policy.autostartEnabled == enabled,
+                            onClick = { onAutostartChanged(app.packageName, enabled) },
+                            shape = SegmentedButtonDefaults.itemShape(index, autostartValues.size),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (enabled) R.string.policy_enabled else R.string.policy_disabled,
+                                ),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
             PolicySwitchRow(
                 title = stringResource(R.string.periodic_enforcement),
                 description = stringResource(R.string.periodic_enforcement_description),
@@ -226,46 +251,35 @@ private fun AppPolicySheet(
             )
 
             HorizontalDivider()
-            Text(stringResource(R.string.aosp_doze_policy), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                stringResource(R.string.aosp_doze_policy_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            val doNotChange = policy.dozePolicy == AppDozePolicy.OFF
             PolicySwitchRow(
-                title = stringResource(R.string.app_doze_off),
-                description = stringResource(R.string.app_doze_off_description),
-                checked = doNotChange,
-                onCheckedChange = { checked ->
-                    onDozeChanged(
-                        app.packageName,
-                        if (checked) AppDozePolicy.OFF else policy.selectedDozePolicy,
-                    )
-                },
+                title = stringResource(R.string.aosp_doze_policy),
+                description = stringResource(R.string.aosp_doze_policy_description),
+                checked = policy.dozeManaged,
+                onCheckedChange = { onDozeManagedChanged(app.packageName, it) },
             )
-            val batteryPolicies = listOf(
-                AppDozePolicy.UNRESTRICTED,
-                AppDozePolicy.DEFAULT,
-                AppDozePolicy.RESTRICTED,
-            )
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                batteryPolicies.forEachIndexed { index, batteryPolicy ->
-                    SegmentedButton(
-                        selected = policy.selectedDozePolicy == batteryPolicy,
-                        onClick = { onDozeChanged(app.packageName, batteryPolicy) },
-                        enabled = !doNotChange,
-                        shape = SegmentedButtonDefaults.itemShape(index, batteryPolicies.size),
-                    ) {
-                        Text(stringResource(batteryPolicy.titleRes), maxLines = 1)
+            if (policy.dozeManaged) {
+                val batteryPolicies = listOf(
+                    AppDozePolicy.UNRESTRICTED,
+                    AppDozePolicy.DEFAULT,
+                    AppDozePolicy.RESTRICTED,
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    batteryPolicies.forEachIndexed { index, batteryPolicy ->
+                        SegmentedButton(
+                            selected = policy.dozePolicy == batteryPolicy,
+                            onClick = { onDozeChanged(app.packageName, batteryPolicy) },
+                            shape = SegmentedButtonDefaults.itemShape(index, batteryPolicies.size),
+                        ) {
+                            Text(stringResource(batteryPolicy.titleRes), maxLines = 1)
+                        }
                     }
                 }
+                Text(
+                    stringResource(policy.dozePolicy.descriptionRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                stringResource(policy.selectedDozePolicy.descriptionRes),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

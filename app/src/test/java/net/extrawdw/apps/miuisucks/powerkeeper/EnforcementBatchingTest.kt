@@ -11,8 +11,8 @@ class EnforcementBatchingTest {
             AppPolicy(
                 packageName = "com.example.push%03d".format(index),
                 appEnabled = true,
-                autostartEnabled = true,
                 autostartManaged = true,
+                autostartEnabled = true,
             )
         }
 
@@ -20,7 +20,10 @@ class EnforcementBatchingTest {
 
         assertEquals(16, batches.size)
         assertTrue(batches.all { it.size <= EnforcementBatching.MAX_POLICIES_PER_BATCH })
-        assertEquals(policies.map(AppPolicy::packageName).sorted(), batches.flatten().map(AppPolicy::packageName))
+        assertEquals(
+            policies.map(AppPolicy::packageName).sorted(),
+            batches.flatten().map(AppPolicy::packageName),
+        )
         batches.forEachIndexed { index, batch ->
             val installed = batch.map(AppPolicy::packageName).toSet()
             val script = EnforcementScript.build(
@@ -37,10 +40,10 @@ class EnforcementBatchingTest {
     }
 
     @Test
-    fun disabledPoliciesAreNotBatched() {
-        val enabled = AppPolicy("com.example.enabled", appEnabled = true)
-        val disabled = AppPolicy("com.example.disabled", appEnabled = false)
+    fun policiesAreSortedBeforeBatching() {
+        val second = AppPolicy("com.example.second", appEnabled = true)
+        val first = AppPolicy("com.example.first", appEnabled = true)
 
-        assertEquals(listOf(listOf(enabled)), EnforcementBatching.split(listOf(disabled, enabled)))
+        assertEquals(listOf(listOf(first, second)), EnforcementBatching.split(listOf(second, first)))
     }
 }

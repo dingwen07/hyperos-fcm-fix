@@ -17,12 +17,6 @@ data class GuardSettings(
             .map(AppPolicy::packageName)
             .sorted()
 
-    val aurogonManagedPackages: List<String>
-        get() = appPolicies.values
-            .filter(AppPolicy::aurogonManaged)
-            .map(AppPolicy::packageName)
-            .sorted()
-
     val enabledAppPolicies: List<AppPolicy>
         get() = appPolicies.values
             .filter(AppPolicy::appEnabled)
@@ -62,27 +56,46 @@ class GuardSettingsStore(context: Context) {
     }
 
     fun setAppEnabled(packageName: String, enabled: Boolean) {
-        updateAppPolicy(packageName) { it.withAppEnabled(enabled) }
+        updateAppPolicy(packageName) { current ->
+            val policy = current ?: AppPolicyDefaults.forPackage(packageName)
+            policy.withAppEnabled(enabled, initializeDefaults = enabled && current == null)
+        }
     }
 
     fun setAurogonEnabled(packageName: String, enabled: Boolean) {
-        updateAppPolicy(packageName) {
-            it.copy(aurogonEnabled = enabled, aurogonManaged = true)
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(aurogonEnabled = enabled)
         }
     }
 
     fun setAutostartEnabled(packageName: String, enabled: Boolean) {
-        updateAppPolicy(packageName) {
-            it.copy(autostartEnabled = enabled, autostartManaged = true)
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(autostartEnabled = enabled)
+        }
+    }
+
+    fun setAutostartManaged(packageName: String, managed: Boolean) {
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(autostartManaged = managed)
         }
     }
 
     fun setDozePolicy(packageName: String, policy: AppDozePolicy) {
-        updateAppPolicy(packageName) { it.withDozePolicy(policy) }
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(dozePolicy = policy)
+        }
+    }
+
+    fun setDozeManaged(packageName: String, managed: Boolean) {
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(dozeManaged = managed)
+        }
     }
 
     fun setPeriodicEnforcement(packageName: String, enabled: Boolean) {
-        updateAppPolicy(packageName) { it.copy(periodicEnforcement = enabled) }
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(periodicEnforcement = enabled)
+        }
     }
 
     fun setIntervalMinutes(minutes: Long) {
@@ -121,11 +134,10 @@ class GuardSettingsStore(context: Context) {
         preferences.edit { putString(KEY_ANDROID_USERS, AndroidUserSelections.encode(users)) }
     }
 
-    private fun updateAppPolicy(packageName: String, transform: (AppPolicy) -> AppPolicy) {
+    private fun updateAppPolicy(packageName: String, transform: (AppPolicy?) -> AppPolicy) {
         require(PACKAGE_NAME.matches(packageName)) { "Invalid package name" }
         val policies = loadAppPolicies().toMutableMap()
-        val current = policies[packageName] ?: AppPolicyDefaults.forPackage(packageName)
-        policies[packageName] = transform(current).copy(packageName = packageName)
+        policies[packageName] = transform(policies[packageName]).copy(packageName = packageName)
         saveAppPolicies(policies.values)
     }
 
@@ -174,7 +186,7 @@ class GuardSettingsStore(context: Context) {
             }
 
         private const val PREFERENCES_NAME = "guard_settings"
-        private const val KEY_APP_POLICIES = "app_policies_v2"
+        private const val KEY_APP_POLICIES = "app_policies"
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
         private const val KEY_ANDROID_USERS = "android_users"
         private const val KEY_LAST_RUN_TIMESTAMP = "last_run_timestamp"
@@ -188,35 +200,31 @@ class GuardSettingsStore(context: Context) {
             policy.packageName,
             if (policy.appEnabled) "1" else "0",
             if (policy.aurogonEnabled) "1" else "0",
-            if (policy.aurogonManaged) "1" else "0",
-            if (policy.autostartEnabled) "1" else "0",
             if (policy.autostartManaged) "1" else "0",
+            if (policy.autostartEnabled) "1" else "0",
+            if (policy.dozeManaged) "1" else "0",
             policy.dozePolicy.persistedValue,
-            policy.selectedDozePolicy.persistedValue,
             if (policy.periodicEnforcement) "1" else "0",
         ).joinToString("|")
 
         internal fun decodeAppPolicy(encoded: String): AppPolicy? {
             val fields = encoded.split('|')
-            if (fields.size != 9 || !PACKAGE_NAME.matches(fields[0])) return null
+            if (fields.size != 8 || !PACKAGE_NAME.matches(fields[0])) return null
             val appEnabled = fields[1]
             val aurogonEnabled = fields[2]
-            val aurogonManaged = fields[3]
+            val autostartManaged = fields[3]
             val autostartEnabled = fields[4]
-            val autostartManaged = fields[5]
-            val periodic = fields[8]
-            if (listOf(appEnabled, aurogonEnabled, aurogonManaged, autostartEnabled, autostartManaged, periodic).any { it !in setOf("0", "1") }) return null
+            val dozeManaged = fields[5]
+            val periodic = fields[7]
+            if (listOf(appEnabled, aurogonEnabled, autostartManaged, autostartEnabled, dozeManaged, periodic).any { it !in setOf("0", "1") }) return null
             return AppPolicy(
                 packageName = fields[0],
                 appEnabled = appEnabled == "1",
                 aurogonEnabled = aurogonEnabled == "1",
-                aurogonManaged = aurogonManaged == "1",
-                autostartEnabled = autostartEnabled == "1",
                 autostartManaged = autostartManaged == "1",
+                autostartEnabled = autostartEnabled == "1",
+                dozeManaged = dozeManaged == "1",
                 dozePolicy = AppDozePolicy.fromPersistedValue(fields[6]),
-                selectedDozePolicy = AppDozePolicy.fromPersistedValue(fields[7])
-                    .takeUnless { it == AppDozePolicy.OFF }
-                    ?: AppDozePolicy.DEFAULT,
                 periodicEnforcement = periodic == "1",
             )
         }

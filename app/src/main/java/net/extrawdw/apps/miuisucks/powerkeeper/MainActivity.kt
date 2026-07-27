@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,9 +16,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -173,8 +176,10 @@ class MainActivity : ComponentActivity() {
                         onCheckMilletValue = ::checkMilletValue,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
+                        onAutostartManagedChanged = ::setAutostartManaged,
                         onAutostartChanged = ::setAutostartEnabled,
                         onPeriodicChanged = ::setPeriodicEnforcement,
+                        onDozeManagedChanged = ::setDozeManaged,
                         onDozeChanged = ::setDozePolicy,
                         onIntervalSelected = ::setInterval,
                         onLogsCleared = ::flushServiceLogs,
@@ -343,25 +348,23 @@ class MainActivity : ComponentActivity() {
                 appendLine(
                     PrivilegedServiceClient.reconcileAurogon(
                         settings.aurogonEnabledPackages,
-                        settings.aurogonManagedPackages,
                         TRIGGER_UI_APP_CHANGE,
                     ),
                 )
-                append(
-                    PrivilegedServiceClient.applyAppPolicy(
-                        policy = if (enabled) {
-                            policy
-                        } else {
-                            policy.copy(
-                                autostartEnabled = false,
-                                autostartManaged = false,
-                                dozePolicy = AppDozePolicy.DEFAULT,
-                            )
-                        },
-                        targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
-                        trigger = TRIGGER_UI_APP_CHANGE,
-                    ),
-                )
+                val targetedPolicy = when {
+                    enabled && (policy.autostartManaged || policy.dozeManaged) -> policy
+                    !enabled -> policy.appOffCleanupPolicy()
+                    else -> null
+                }
+                if (targetedPolicy != null) {
+                    append(
+                        PrivilegedServiceClient.applyAppPolicy(
+                            policy = targetedPolicy,
+                            targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                            trigger = TRIGGER_UI_APP_CHANGE,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -373,22 +376,40 @@ class MainActivity : ComponentActivity() {
         runAppSettingAction(packageName, "aurogon") {
             PrivilegedServiceClient.reconcileAurogon(
                 settings.aurogonEnabledPackages,
-                settings.aurogonManagedPackages,
                 TRIGGER_UI_APP_CHANGE,
+            )
+        }
+    }
+
+    private fun setAutostartManaged(packageName: String, managed: Boolean) {
+        settingsStore.setAutostartManaged(packageName, managed)
+        val policy = refreshAppSetting(packageName, willApply = managed).policyFor(packageName)
+        if (!uiState.shizuku.granted || !policy.appEnabled || !managed) return
+        runAppSettingAction(packageName, "autostart-management") {
+            PrivilegedServiceClient.applyAppPolicy(
+                policy = AppPolicy(
+                    packageName = packageName,
+                    appEnabled = true,
+                    autostartManaged = true,
+                    autostartEnabled = policy.autostartEnabled,
+                ),
+                targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                trigger = TRIGGER_UI_APP_CHANGE,
             )
         }
     }
 
     private fun setAutostartEnabled(packageName: String, enabled: Boolean) {
         settingsStore.setAutostartEnabled(packageName, enabled)
-        refreshAppSetting(packageName, willApply = true)
-        if (!uiState.shizuku.granted) return
+        val policy = refreshAppSetting(packageName, willApply = true).policyFor(packageName)
+        if (!uiState.shizuku.granted || !policy.appEnabled || !policy.autostartManaged) return
         runAppSettingAction(packageName, "autostart") {
             PrivilegedServiceClient.applyAppPolicy(
                 policy = AppPolicy(
                     packageName = packageName,
-                    autostartEnabled = enabled,
+                    appEnabled = true,
                     autostartManaged = true,
+                    autostartEnabled = enabled,
                 ),
                 targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
                 trigger = TRIGGER_UI_APP_CHANGE,
@@ -401,13 +422,36 @@ class MainActivity : ComponentActivity() {
         refreshAppSetting(packageName, willApply = false)
     }
 
+    private fun setDozeManaged(packageName: String, managed: Boolean) {
+        settingsStore.setDozeManaged(packageName, managed)
+        val policy = refreshAppSetting(packageName, willApply = managed).policyFor(packageName)
+        if (!uiState.shizuku.granted || !policy.appEnabled || !managed) return
+        runAppSettingAction(packageName, "battery-management") {
+            PrivilegedServiceClient.applyAppPolicy(
+                policy = AppPolicy(
+                    packageName = packageName,
+                    appEnabled = true,
+                    dozeManaged = true,
+                    dozePolicy = policy.dozePolicy,
+                ),
+                targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
+                trigger = TRIGGER_UI_APP_CHANGE,
+            )
+        }
+    }
+
     private fun setDozePolicy(packageName: String, policy: AppDozePolicy) {
         settingsStore.setDozePolicy(packageName, policy)
-        refreshAppSetting(packageName, willApply = policy != AppDozePolicy.OFF)
-        if (!uiState.shizuku.granted || policy == AppDozePolicy.OFF) return
+        val appPolicy = refreshAppSetting(packageName, willApply = true).policyFor(packageName)
+        if (!uiState.shizuku.granted || !appPolicy.appEnabled || !appPolicy.dozeManaged) return
         runAppSettingAction(packageName, "battery") {
             PrivilegedServiceClient.applyAppPolicy(
-                policy = AppPolicy(packageName = packageName, dozePolicy = policy),
+                policy = AppPolicy(
+                    packageName = packageName,
+                    appEnabled = true,
+                    dozeManaged = true,
+                    dozePolicy = policy,
+                ),
                 targetUserIds = settingsStore.loadEnabledAndroidUserIds(),
                 trigger = TRIGGER_UI_APP_CHANGE,
             )
@@ -503,7 +547,6 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
-                    settings.aurogonManagedPackages,
                     settings.periodicallyEnforcedAppPolicies,
                     settingsStore.loadEnabledAndroidUserIds(),
                     TRIGGER_UI_STALE_PERIODIC,
@@ -551,7 +594,6 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
-                    settings.aurogonManagedPackages,
                     settings.enabledAppPolicies,
                     targetUserIds,
                     TRIGGER_UI_APPLY,
@@ -739,8 +781,10 @@ private fun GuardApp(
     onCheckMilletValue: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
+    onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
     onIntervalSelected: (Long) -> Unit,
     onLogsCleared: () -> Unit,
@@ -831,8 +875,10 @@ private fun GuardApp(
                 modifier = Modifier.padding(innerPadding),
                 onAppEnabledChanged = onAppEnabledChanged,
                 onAurogonChanged = onAurogonChanged,
+                onAutostartManagedChanged = onAutostartManagedChanged,
                 onAutostartChanged = onAutostartChanged,
                 onPeriodicChanged = onPeriodicChanged,
+                onDozeManagedChanged = onDozeManagedChanged,
                 onDozeChanged = onDozeChanged,
             )
         }
@@ -1200,7 +1246,11 @@ private fun LastRunCard(lastRun: LastRun) {
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.MEDIUM)
             .format(Date(lastRun.timestampMillis))
     }
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 400.dp),
+    ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
                 stringResource(R.string.last_check),
@@ -1224,6 +1274,10 @@ private fun LastRunCard(lastRun: LastRun) {
             if (expanded) {
                 Text(
                     lastRun.report,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState()),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

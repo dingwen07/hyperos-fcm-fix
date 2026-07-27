@@ -6,46 +6,34 @@ object AurogonConfig {
 
     private const val BROADCAST_PREFIX = "broadcastctrl:"
     private const val MARKER_ACTION = "__MIUI_POWERKEEPER_AUROGON_V1__"
-    private const val DISABLED_ACTION = "__MIUI_POWERKEEPER_DISABLED__"
     private val PACKAGE_NAME = Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*")
 
     /** Merges this app's complete managed overlay into Xiaomi's shared cloud setting. */
     fun merge(
         rawValue: String?,
         desiredPackages: Collection<String>,
-        managedPackages: Collection<String>,
         managerPackage: String,
     ): String {
         require(PACKAGE_NAME.matches(managerPackage)) { "Invalid manager package" }
         require(desiredPackages.all(PACKAGE_NAME::matches)) { "Invalid target package" }
-        require(managedPackages.all(PACKAGE_NAME::matches)) { "Invalid managed package" }
 
         val raw = rawValue.normalizedSettingValue()
         val sections = splitSections(raw)
-        val managedSections = sections.filter { it.isManagedSection(managerPackage) }
         val baseSections = sections.filterNot { it.isManagedSection(managerPackage) }
         val base = parseBroadcastState(baseSections)
-        val prior = parseManagedState(managedSections, managerPackage)
         val desired = desiredPackages.toSortedSet()
 
         // Xiaomi's false flag already thaws every frozen broadcast target. Do not override it.
         if (!base.enabled) return joinSections(baseSections)
 
-        val enabled = desired
-        val disabled = (prior.known + managedPackages) - desired
-
         val tokens = mutableListOf("$managerPackage/$MARKER_ACTION")
-        enabled.forEach { packageName ->
+        desired.forEach { packageName ->
             val baseAction = base.packageActions[packageName]
             if (baseAction.allowsFcm()) return@forEach
             val action = listOfNotNull(baseAction?.takeIf(String::isNotBlank), FCM_RECEIVE_ACTION)
                 .joinToString(",")
             tokens += "$packageName/$action"
         }
-        disabled.sorted().forEach { packageName ->
-            if (packageName !in base.packageActions) tokens += "$packageName/$DISABLED_ACTION"
-        }
-
         // A marker-only section carries no state and would unnecessarily become the final cloud flag.
         val managed = if (tokens.size == 1) null else "broadcastctrl:true#${tokens.joinToString("#")}"
         return joinSections(if (managed == null) baseSections else baseSections + managed)
@@ -57,29 +45,6 @@ object AurogonConfig {
         return packages.all { packageName ->
             state.packageActions[packageName].allowsFcm()
         }
-    }
-
-    private fun parseManagedState(sections: List<String>, managerPackage: String): ManagedState {
-        val enabled = linkedSetOf<String>()
-        val disabled = linkedSetOf<String>()
-        sections.forEach { section ->
-            section.tokens().drop(1).forEach { token ->
-                val (packageName, action) = token.packageAction() ?: return@forEach
-                if (packageName == managerPackage) return@forEach
-                if (!PACKAGE_NAME.matches(packageName)) return@forEach
-                when {
-                    action == DISABLED_ACTION -> {
-                        disabled += packageName
-                        enabled -= packageName
-                    }
-                    action.allowsFcm() -> {
-                        enabled += packageName
-                        disabled -= packageName
-                    }
-                }
-            }
-        }
-        return ManagedState(enabled, disabled)
     }
 
     private fun parseBroadcastState(sections: List<String>): BroadcastState {
@@ -144,12 +109,4 @@ object AurogonConfig {
         val enabled: Boolean,
         val packageActions: Map<String, String>,
     )
-
-    private data class ManagedState(
-        val enabled: Set<String>,
-        val disabled: Set<String>,
-    ) {
-        val known: Set<String>
-            get() = enabled + disabled
-    }
 }

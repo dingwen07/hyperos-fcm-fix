@@ -47,7 +47,6 @@ class EnforcementWorker(
         return try {
             val report = PrivilegedServiceClient.enforce(
                 settings.aurogonEnabledPackages,
-                settings.aurogonManagedPackages,
                 settings.periodicallyEnforcedAppPolicies,
                 targetUserIds,
                 trigger = "background:periodic-enforcement",

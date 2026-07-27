@@ -41,6 +41,7 @@ enum class AppDozePolicy(
 
 data class AppPolicy(
     val packageName: String,
+    val appEnabled: Boolean = false,
     val aurogonEnabled: Boolean = false,
     val aurogonManaged: Boolean = false,
     val autostartEnabled: Boolean = false,
@@ -48,8 +49,20 @@ data class AppPolicy(
     val dozePolicy: AppDozePolicy = AppDozePolicy.OFF,
     val periodicEnforcement: Boolean = false,
 ) {
-    val fcmProtectionEnabled: Boolean
-        get() = aurogonEnabled
+    fun withAppEnabled(enabled: Boolean): AppPolicy =
+        if (!enabled) {
+            copy(appEnabled = false)
+        } else if (!aurogonManaged) {
+            copy(
+                appEnabled = true,
+                aurogonEnabled = true,
+                aurogonManaged = true,
+                autostartEnabled = true,
+                autostartManaged = true,
+            )
+        } else {
+            copy(appEnabled = true)
+        }
 }
 
 object AppPolicyDefaults {
@@ -65,6 +78,7 @@ object AppPolicyDefaults {
         if (packageName in HYPEROS_AUTO_UNRESTRICTED_PACKAGES) {
             AppPolicy(
                 packageName = packageName,
+                appEnabled = true,
                 aurogonEnabled = true,
                 aurogonManaged = true,
                 autostartEnabled = true,

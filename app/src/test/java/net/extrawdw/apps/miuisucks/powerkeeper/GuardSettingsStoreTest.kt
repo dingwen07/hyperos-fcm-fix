@@ -32,6 +32,7 @@ class GuardSettingsStoreTest {
     fun appPolicyCodecPreservesIndependentControls() {
         val policy = AppPolicy(
             packageName = "com.example.push",
+            appEnabled = true,
             aurogonEnabled = true,
             aurogonManaged = true,
             autostartEnabled = false,
@@ -49,6 +50,7 @@ class GuardSettingsStoreTest {
         assertTrue("com.tencent.mm" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
         assertTrue("org.telegram.messenger" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
         AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.forEach { packageName ->
+            assertTrue(AppPolicyDefaults.forPackage(packageName).appEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).aurogonEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).autostartEnabled)
             assertEquals(AppDozePolicy.DEFAULT, AppPolicyDefaults.forPackage(packageName).dozePolicy)
@@ -56,6 +58,7 @@ class GuardSettingsStoreTest {
         }
 
         val other = AppPolicyDefaults.forPackage("com.example.push")
+        assertFalse(other.appEnabled)
         assertFalse(other.aurogonEnabled)
         assertFalse(other.autostartEnabled)
         assertEquals(AppDozePolicy.OFF, other.dozePolicy)
@@ -63,25 +66,104 @@ class GuardSettingsStoreTest {
     }
 
     @Test
-    fun appMasterStateTracksAurogonRatherThanAdvancedAutostartToggle() {
+    fun appEnabledStateIsIndependentOfDetailToggles() {
         assertFalse(
             AppPolicy(
                 packageName = "com.example.push",
+                appEnabled = false,
+                aurogonEnabled = true,
                 autostartEnabled = true,
                 autostartManaged = true,
-            ).fcmProtectionEnabled,
+            ).appEnabled,
         )
         assertTrue(
             AppPolicy(
                 packageName = "com.example.push",
-                aurogonEnabled = true,
+                appEnabled = true,
+                aurogonEnabled = false,
                 aurogonManaged = true,
-            ).fcmProtectionEnabled,
+            ).appEnabled,
         )
     }
 
     @Test
-    fun legacyVariableLengthPolicyIsNotDecoded() {
-        assertEquals(null, GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|default"))
+    fun disablingAppRemembersAllDetailSettings() {
+        val configured = AppPolicy(
+            packageName = "com.example.push",
+            appEnabled = true,
+            aurogonEnabled = false,
+            aurogonManaged = true,
+            autostartEnabled = false,
+            autostartManaged = true,
+            dozePolicy = AppDozePolicy.UNRESTRICTED,
+            periodicEnforcement = true,
+        )
+        val disabled = configured.withAppEnabled(false)
+
+        assertFalse(disabled.appEnabled)
+        assertEquals(configured.copy(appEnabled = false), disabled)
+        assertEquals(configured, disabled.withAppEnabled(true))
+    }
+
+    @Test
+    fun firstEnableTurnsOnAurogonAndAutostartDefaults() {
+        val enabled = AppPolicyDefaults.forPackage("com.example.push").withAppEnabled(true)
+
+        assertTrue(enabled.appEnabled)
+        assertTrue(enabled.aurogonEnabled)
+        assertTrue(enabled.aurogonManaged)
+        assertTrue(enabled.autostartEnabled)
+        assertTrue(enabled.autostartManaged)
+        assertEquals(AppDozePolicy.OFF, enabled.dozePolicy)
+    }
+
+    @Test
+    fun fullAndPeriodicPolicySelectionsAreGuardedByAppEnabledState() {
+        val enabledPeriodic = AppPolicy(
+            packageName = "com.example.enabled.periodic",
+            appEnabled = true,
+            aurogonEnabled = true,
+            aurogonManaged = true,
+            periodicEnforcement = true,
+        )
+        val enabledManualOnly = AppPolicy(
+            packageName = "com.example.enabled.manual",
+            appEnabled = true,
+            aurogonEnabled = false,
+            aurogonManaged = true,
+            periodicEnforcement = false,
+        )
+        val disabledPeriodic = AppPolicy(
+            packageName = "com.example.disabled.periodic",
+            appEnabled = false,
+            aurogonEnabled = true,
+            aurogonManaged = true,
+            autostartEnabled = true,
+            autostartManaged = true,
+            dozePolicy = AppDozePolicy.UNRESTRICTED,
+            periodicEnforcement = true,
+        )
+        val settings = GuardSettings(
+            appPolicies = listOf(enabledPeriodic, enabledManualOnly, disabledPeriodic)
+                .associateBy(AppPolicy::packageName),
+            intervalMinutes = GuardSettingsStore.MINIMUM_INTERVAL_MINUTES,
+            androidUsers = emptyList(),
+        )
+
+        assertEquals(
+            listOf(enabledManualOnly, enabledPeriodic),
+            settings.enabledAppPolicies,
+        )
+        assertEquals(listOf(enabledPeriodic), settings.periodicallyEnforcedAppPolicies)
+        assertEquals(listOf(enabledPeriodic.packageName), settings.aurogonEnabledPackages)
+        assertEquals(
+            listOf(disabledPeriodic, enabledManualOnly, enabledPeriodic).map(AppPolicy::packageName).sorted(),
+            settings.aurogonManagedPackages,
+        )
+    }
+
+    @Test
+    fun legacySevenFieldPolicyIsNotDecoded() {
+        assertEquals(null, GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|1|1|default|1"))
     }
 }

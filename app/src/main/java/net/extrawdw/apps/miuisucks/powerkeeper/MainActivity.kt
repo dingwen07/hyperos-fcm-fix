@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
                         onRefreshAndroidUsers = { refreshAndroidUsers() },
                         onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                         onCheckMilletValue = ::checkMilletValue,
-                        onAppMasterChanged = ::setAppMasterEnabled,
+                        onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
                         onAutostartChanged = ::setAutostartEnabled,
                         onPeriodicChanged = ::setPeriodicEnforcement,
@@ -323,12 +323,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setAppMasterEnabled(packageName: String, enabled: Boolean) {
-        settingsStore.setAppMasterEnabled(packageName, enabled)
+    private fun setAppEnabled(packageName: String, enabled: Boolean) {
+        settingsStore.setAppEnabled(packageName, enabled)
         val settings = refreshAppSetting(packageName, willApply = true)
         if (!uiState.shizuku.granted) return
         val policy = settings.policyFor(packageName)
-        runAppSettingAction(packageName, if (enabled) "master-on" else "master-off") {
+        runAppSettingAction(packageName, if (enabled) "app-on" else "app-off") {
             buildString {
                 appendLine(
                     PrivilegedServiceClient.reconcileAurogon(
@@ -489,13 +489,12 @@ class MainActivity : ComponentActivity() {
         if (stalePeriodicRunning) return
         stalePeriodicRunning = true
         val settings = settingsStore.loadSettings()
-        val periodicPolicies = settings.appPolicies.values.filter(AppPolicy::periodicEnforcement)
         lifecycleScope.launch {
             runCatching {
                 PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
                     settings.aurogonManagedPackages,
-                    periodicPolicies,
+                    settings.periodicallyEnforcedAppPolicies,
                     settingsStore.loadEnabledAndroidUserIds(),
                     TRIGGER_UI_STALE_PERIODIC,
                 )
@@ -542,7 +541,7 @@ class MainActivity : ComponentActivity() {
                 PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
                     settings.aurogonManagedPackages,
-                    settings.appPolicies.values,
+                    settings.enabledAppPolicies,
                     targetUserIds,
                     TRIGGER_UI_APPLY,
                 )
@@ -722,7 +721,7 @@ private fun GuardApp(
     onRefreshAndroidUsers: () -> Unit,
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
-    onAppMasterChanged: (String, Boolean) -> Unit,
+    onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
@@ -814,7 +813,7 @@ private fun GuardApp(
                 apps = state.installedApps,
                 policies = state.settings.appPolicies,
                 modifier = Modifier.padding(innerPadding),
-                onMasterChanged = onAppMasterChanged,
+                onAppEnabledChanged = onAppEnabledChanged,
                 onAurogonChanged = onAurogonChanged,
                 onAutostartChanged = onAutostartChanged,
                 onPeriodicChanged = onPeriodicChanged,
@@ -913,12 +912,12 @@ private fun ShizukuCard(
 
 @Composable
 private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
-    val policies = state.settings.appPolicies.values
+    val policies = state.settings.enabledAppPolicies
     val statusText = stringResource(
         R.string.protection_summary,
-        policies.count(AppPolicy::aurogonEnabled),
+        state.settings.aurogonEnabledPackages.size,
         policies.count { it.autostartManaged && it.autostartEnabled },
-        policies.count(AppPolicy::periodicEnforcement),
+        state.settings.periodicallyEnforcedAppPolicies.size,
     )
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {

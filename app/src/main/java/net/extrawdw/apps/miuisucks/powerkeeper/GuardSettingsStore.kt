@@ -13,7 +13,7 @@ data class GuardSettings(
 
     val aurogonEnabledPackages: List<String>
         get() = appPolicies.values
-            .filter(AppPolicy::aurogonEnabled)
+            .filter { it.appEnabled && it.aurogonEnabled }
             .map(AppPolicy::packageName)
             .sorted()
 
@@ -22,6 +22,14 @@ data class GuardSettings(
             .filter(AppPolicy::aurogonManaged)
             .map(AppPolicy::packageName)
             .sorted()
+
+    val enabledAppPolicies: List<AppPolicy>
+        get() = appPolicies.values
+            .filter(AppPolicy::appEnabled)
+            .sortedBy(AppPolicy::packageName)
+
+    val periodicallyEnforcedAppPolicies: List<AppPolicy>
+        get() = enabledAppPolicies.filter(AppPolicy::periodicEnforcement)
 }
 
 data class LastRun(
@@ -53,23 +61,8 @@ class GuardSettingsStore(context: Context) {
         return policies
     }
 
-    fun setAppMasterEnabled(packageName: String, enabled: Boolean) {
-        updateAppPolicy(packageName) {
-            if (enabled) {
-                it.copy(
-                    aurogonEnabled = true,
-                    aurogonManaged = true,
-                    autostartEnabled = true,
-                    autostartManaged = true,
-                )
-            } else {
-                it.copy(
-                    aurogonEnabled = false,
-                    aurogonManaged = true,
-                    dozePolicy = AppDozePolicy.DEFAULT,
-                )
-            }
-        }
+    fun setAppEnabled(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) { it.withAppEnabled(enabled) }
     }
 
     fun setAurogonEnabled(packageName: String, enabled: Boolean) {
@@ -193,6 +186,7 @@ class GuardSettingsStore(context: Context) {
 
         internal fun encodeAppPolicy(policy: AppPolicy): String = listOf(
             policy.packageName,
+            if (policy.appEnabled) "1" else "0",
             if (policy.aurogonEnabled) "1" else "0",
             if (policy.aurogonManaged) "1" else "0",
             if (policy.autostartEnabled) "1" else "0",
@@ -203,20 +197,22 @@ class GuardSettingsStore(context: Context) {
 
         internal fun decodeAppPolicy(encoded: String): AppPolicy? {
             val fields = encoded.split('|')
-            if (fields.size != 7 || !PACKAGE_NAME.matches(fields[0])) return null
-            val aurogonEnabled = fields[1]
-            val aurogonManaged = fields[2]
-            val autostartEnabled = fields[3]
-            val autostartManaged = fields[4]
-            val periodic = fields[6]
-            if (listOf(aurogonEnabled, aurogonManaged, autostartEnabled, autostartManaged, periodic).any { it !in setOf("0", "1") }) return null
+            if (fields.size != 8 || !PACKAGE_NAME.matches(fields[0])) return null
+            val appEnabled = fields[1]
+            val aurogonEnabled = fields[2]
+            val aurogonManaged = fields[3]
+            val autostartEnabled = fields[4]
+            val autostartManaged = fields[5]
+            val periodic = fields[7]
+            if (listOf(appEnabled, aurogonEnabled, aurogonManaged, autostartEnabled, autostartManaged, periodic).any { it !in setOf("0", "1") }) return null
             return AppPolicy(
                 packageName = fields[0],
+                appEnabled = appEnabled == "1",
                 aurogonEnabled = aurogonEnabled == "1",
                 aurogonManaged = aurogonManaged == "1",
                 autostartEnabled = autostartEnabled == "1",
                 autostartManaged = autostartManaged == "1",
-                dozePolicy = AppDozePolicy.fromPersistedValue(fields[5]),
+                dozePolicy = AppDozePolicy.fromPersistedValue(fields[6]),
                 periodicEnforcement = periodic == "1",
             )
         }

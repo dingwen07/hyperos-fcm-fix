@@ -48,7 +48,11 @@ object PrivilegedServiceClient {
         trigger: String,
     ): String =
         withService("enforce", trigger) { connectedService ->
-            val orderedPolicies = policies.sortedBy(AppPolicy::packageName)
+            // Full passes never apply per-app AppOps or battery state for a disabled app.
+            // Targeted disable cleanup uses applyAppPolicy() and remains intentionally exempt.
+            val orderedPolicies = policies
+                .filter(AppPolicy::appEnabled)
+                .sortedBy(AppPolicy::packageName)
             connectedService.enforce(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 managedAurogonPackages.distinct().sorted().toTypedArray(),

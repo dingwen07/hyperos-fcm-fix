@@ -51,7 +51,7 @@ fun AppManagementScreen(
     apps: List<InstalledFcmApp>?,
     policies: Map<String, AppPolicy>,
     modifier: Modifier = Modifier,
-    onMasterChanged: (String, Boolean) -> Unit,
+    onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
@@ -69,8 +69,8 @@ fun AppManagementScreen(
         compareBy<InstalledFcmApp> { it.label.lowercase(Locale.getDefault()) }
             .thenBy(InstalledFcmApp::packageName),
     )
-    val enabled = sorted.filter { policies.policyFor(it.packageName).fcmProtectionEnabled }
-    val disabled = sorted.filterNot { policies.policyFor(it.packageName).fcmProtectionEnabled }
+    val enabled = sorted.filter { policies.policyFor(it.packageName).appEnabled }
+    val disabled = sorted.filterNot { policies.policyFor(it.packageName).appEnabled }
 
     Column(modifier.fillMaxSize()) {
             OutlinedTextField(
@@ -96,13 +96,13 @@ fun AppManagementScreen(
                     if (enabled.isNotEmpty()) {
                         stickyHeader { AppSectionHeader(stringResource(R.string.apps_section_enabled), enabled.size) }
                         items(enabled, key = { "enabled:${it.packageName}" }) { app ->
-                            AppPolicyRow(app, policies.policyFor(app.packageName), onMasterChanged) { configFor = app }
+                            AppPolicyRow(app, policies.policyFor(app.packageName), onAppEnabledChanged) { configFor = app }
                         }
                     }
                     if (disabled.isNotEmpty()) {
                         stickyHeader { AppSectionHeader(stringResource(R.string.apps_section_all), disabled.size) }
                         items(disabled, key = { "all:${it.packageName}" }) { app ->
-                            AppPolicyRow(app, policies.policyFor(app.packageName), onMasterChanged) { configFor = app }
+                            AppPolicyRow(app, policies.policyFor(app.packageName), onAppEnabledChanged) { configFor = app }
                         }
                     }
                 }
@@ -126,12 +126,12 @@ fun AppManagementScreen(
 private fun AppPolicyRow(
     app: InstalledFcmApp,
     policy: AppPolicy,
-    onMasterChanged: (String, Boolean) -> Unit,
+    onAppEnabledChanged: (String, Boolean) -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     ListItem(
         modifier = Modifier.clickable(
-            enabled = policy.fcmProtectionEnabled,
+            enabled = policy.appEnabled,
             onClick = onOpenConfig,
         ),
         leadingContent = { AppIcon(app.icon) },
@@ -145,8 +145,8 @@ private fun AppPolicyRow(
         },
         trailingContent = {
             Switch(
-                checked = policy.fcmProtectionEnabled,
-                onCheckedChange = { onMasterChanged(app.packageName, it) },
+                checked = policy.appEnabled,
+                onCheckedChange = { onAppEnabledChanged(app.packageName, it) },
             )
         },
     )

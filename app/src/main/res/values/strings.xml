@@ -64,6 +64,8 @@
     <string name="millet_no_restrict_empty">No packages in the list.</string>
     <string name="checking">Checking…</string>
     <string name="refresh_status">Refresh status</string>
+    <string name="fcm_diagnostics" translatable="false">FCM Diagnostics</string>
+    <string name="fcm_diagnostics_unavailable_message">FCM Diagnostics is not available in this version of Google Play services.</string>
 
     <string name="check_frequency">Periodical enforcement frequency</string>
     <string name="check_frequency_description">How often apps with Periodic enforcement enabled have only their managed HyperOS Autostart and AOSP Battery optimization settings restored. Off disables this per-app task; the separate 15-minute Aurogon and GMS recovery task remains scheduled.</string>

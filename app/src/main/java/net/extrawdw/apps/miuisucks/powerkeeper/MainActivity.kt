@@ -1,5 +1,7 @@
 package net.extrawdw.apps.miuisucks.powerkeeper
 
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -174,6 +176,7 @@ class MainActivity : ComponentActivity() {
                         onRefreshAndroidUsers = { refreshAndroidUsers() },
                         onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                         onCheckMilletValue = ::checkMilletValue,
+                        onOpenFcmDiagnostics = ::openFcmDiagnostics,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
                         onAutostartManagedChanged = ::setAutostartManaged,
@@ -336,6 +339,26 @@ class MainActivity : ComponentActivity() {
         } else {
             uiState = uiState.copy(message = getString(R.string.shizuku_not_installed_message), messageIsError = true)
         }
+    }
+
+    private fun openFcmDiagnostics() {
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(GMS_PACKAGE, FCM_DIAGNOSTICS_ACTIVITY)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            showFcmDiagnosticsUnavailableMessage()
+        } catch (_: SecurityException) {
+            showFcmDiagnosticsUnavailableMessage()
+        }
+    }
+
+    private fun showFcmDiagnosticsUnavailableMessage() {
+        uiState = uiState.copy(
+            message = getString(R.string.fcm_diagnostics_unavailable_message),
+            messageIsError = true,
+        )
     }
 
     private fun setAppEnabled(packageName: String, enabled: Boolean) {
@@ -742,6 +765,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val SHIZUKU_PERMISSION_REQUEST = 42
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+        private const val GMS_PACKAGE = "com.google.android.gms"
+        private const val FCM_DIAGNOSTICS_ACTIVITY = "com.google.android.gms.gcm.GcmDiagnostics"
         private const val TRIGGER_UI_APPLY = "ui:apply"
         private const val TRIGGER_UI_USERS = "ui:user-list"
         private const val TRIGGER_UI_MILLET = "ui:millet-check"
@@ -779,6 +804,7 @@ private fun GuardApp(
     onRefreshAndroidUsers: () -> Unit,
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
+    onOpenFcmDiagnostics: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
@@ -807,6 +833,11 @@ private fun GuardApp(
                         }
                     } else {
                         Text(stringResource(R.string.apps_title), fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                actions = {
+                    TextButton(onClick = onOpenFcmDiagnostics) {
+                        Text(stringResource(R.string.fcm_diagnostics))
                     }
                 },
             )
@@ -858,7 +889,12 @@ private fun GuardApp(
                         onUserEnabledChanged = onAndroidUserEnabledChanged,
                     )
                 }
-                item { MilletNoRestrictCard(state = state, onCheckValue = onCheckMilletValue) }
+                item {
+                    MilletNoRestrictCard(
+                        state = state,
+                        onCheckValue = onCheckMilletValue,
+                    )
+                }
                 item {
                     IntervalCard(
                         selectedMinutes = state.settings.intervalMinutes,

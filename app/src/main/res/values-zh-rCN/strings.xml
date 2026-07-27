@@ -108,6 +108,7 @@
     <string name="app_setting_failed_message">无法应用 %1$s 的设置：%2$s</string>
     <string name="frequency_changed_message">检查频率已更改为%1$s。</string>
     <string name="applying_settings_message">正在应用设置…</string>
+    <string name="applying_progress">正在应用 %1$d / %2$d</string>
     <string name="settings_applied_message">设置已应用。</string>
     <string name="settings_partially_applied_message">部分设置需要处理，请查看上次检查或诊断信息。</string>
     <string name="settings_failed_message">无法应用设置：%1$s</string>

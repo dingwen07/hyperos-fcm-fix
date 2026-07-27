@@ -45,38 +45,142 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         dozePolicies: IntArray,
         targetUserIds: IntArray,
         trigger: String,
+    ): String = enforceBatched(
+        aurogonPackages,
+        managedAurogonPackages,
+        policyPackages,
+        autostartModes,
+        dozePolicies,
+        targetUserIds,
+        trigger,
+        null,
+    )
+
+    override fun enforceBatched(
+        aurogonPackages: Array<out String>,
+        managedAurogonPackages: Array<out String>,
+        policyPackages: Array<out String>,
+        autostartModes: IntArray,
+        dozePolicies: IntArray,
+        targetUserIds: IntArray,
+        trigger: String,
+        progressCallback: IEnforcementProgressCallback?,
     ): String {
         val startedAt = System.nanoTime()
-        require(policyPackages.size == autostartModes.size && policyPackages.size == dozePolicies.size) {
-            "Mismatched app-policy arrays"
-        }
-        val policies = policyPackages.indices.map { index ->
-            val autostartMode = autostartModes[index]
-            require(autostartMode in -1..1) { "Invalid autostart mode" }
-            AppPolicy(
-                packageName = policyPackages[index],
-                autostartEnabled = autostartMode == 1,
-                autostartManaged = autostartMode >= 0,
-                dozePolicy = AppDozePolicy.fromCode(dozePolicies[index]),
-            )
-        }
+        val policies = decodePolicies(policyPackages, autostartModes, dozePolicies)
+        val batches = EnforcementBatching.split(policies)
+        val targetUsers = targetUserIds.distinct().sorted()
         serviceLog(
             'I',
             "Enforce",
-            "start trigger=$trigger aurogon=${aurogonPackages.size} policies=${policies.size} users=${targetUserIds.joinToString()}",
+            "start trigger=$trigger aurogon=${aurogonPackages.size} policies=${policies.size} batches=${batches.size} users=${targetUsers.joinToString()}",
         )
-        val script = EnforcementScript.build(policies, BuildConfig.APPLICATION_ID, targetUserIds.toList())
+        notifyProgress(progressCallback, 0, policies.size)
         return runCatching {
-            buildString {
+            val installedSnapshot = loadInstalledPackages(targetUsers)
+            val report = buildString {
                 appendLine(startFcmProtection(aurogonPackages, managedAurogonPackages, trigger))
-                append(runScript(script))
+                appendLine(installedSnapshot.report)
+                if (batches.isEmpty()) {
+                    append(
+                        runScript(
+                            EnforcementScript.build(
+                                policies = emptyList(),
+                                applicationId = BuildConfig.APPLICATION_ID,
+                                targetUsers = targetUsers,
+                            ),
+                        ),
+                    )
+                } else {
+                    var completed = 0
+                    batches.forEachIndexed { index, batch ->
+                        appendLine("Policy batch ${index + 1}/${batches.size} (${batch.size} apps)")
+                        appendLine(
+                            runScript(
+                                EnforcementScript.build(
+                                    policies = batch,
+                                    applicationId = BuildConfig.APPLICATION_ID,
+                                    targetUsers = targetUsers,
+                                    includeSelfProtection = index == 0,
+                                    includeWriteSettings = index == batches.lastIndex,
+                                    installedPackagesByUser = installedSnapshot.packagesByUser,
+                                    progressStartIndex = completed,
+                                ),
+                                onProgress = { processed ->
+                                    notifyProgress(progressCallback, processed, policies.size)
+                                },
+                            ),
+                        )
+                        completed += batch.size
+                        notifyProgress(progressCallback, completed, policies.size)
+                    }
+                }
             }.trim()
+            if (installedSnapshot.failed) {
+                "$report\nFAILED: one or more installed-package snapshots failed"
+            } else {
+                report
+            }
         }.onSuccess { report ->
             val durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
             serviceLog('I', "Enforce", "finish trigger=$trigger durationMs=$durationMillis report=${report.singleLine(4_000)}")
         }.onFailure { error ->
             serviceLog('E', "Enforce", "failed trigger=$trigger error=${error.stackTraceToString().take(4_000)}")
         }.getOrThrow()
+    }
+
+    private fun decodePolicies(
+        policyPackages: Array<out String>,
+        autostartModes: IntArray,
+        dozePolicies: IntArray,
+    ): List<AppPolicy> {
+        require(policyPackages.size == autostartModes.size && policyPackages.size == dozePolicies.size) {
+            "Mismatched app-policy arrays"
+        }
+        return policyPackages.indices.map { index ->
+            val autostartMode = autostartModes[index]
+            require(autostartMode in -1..1) { "Invalid autostart mode" }
+            AppPolicy(
+                packageName = policyPackages[index],
+                appEnabled = true,
+                autostartEnabled = autostartMode == 1,
+                autostartManaged = autostartMode >= 0,
+                dozePolicy = AppDozePolicy.fromCode(dozePolicies[index]),
+            )
+        }
+    }
+
+    private fun loadInstalledPackages(targetUserIds: List<Int>): InstalledPackagesSnapshot {
+        var failed = false
+        val reports = mutableListOf<String>()
+        val packagesByUser = targetUserIds.associateWith { userId ->
+            val result = runCommand(
+                listOf(PM_BINARY, "list", "packages", "--user", userId.toString()),
+                USER_LIST_COMMAND_TIMEOUT_SECONDS,
+                MAX_PACKAGE_LIST_OUTPUT_LENGTH,
+            )
+            if (!result.succeeded) {
+                failed = true
+                reports += "Installed packages user $userId: FAILED (${result.summary})"
+                emptySet()
+            } else {
+                val packages = result.output
+                    .lineSequence()
+                    .mapNotNull { line -> line.removePrefix("package:").takeIf { it != line && it.isNotBlank() } }
+                    .toSet()
+                reports += "Installed packages user $userId: ${packages.size} found"
+                packages
+            }
+        }
+        return InstalledPackagesSnapshot(packagesByUser, reports.joinToString("\n"), failed)
+    }
+
+    private fun notifyProgress(callback: IEnforcementProgressCallback?, completed: Int, total: Int) {
+        if (callback == null) return
+        runCatching { callback.onProgress(completed, total) }
+            .onFailure { error ->
+                serviceLog('W', "Enforce", "progress callback failed: ${error.message ?: error.javaClass.simpleName}")
+            }
     }
 
     override fun destroy() {
@@ -384,7 +488,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         }
     }
 
-    private fun runScript(script: String): String {
+    private fun runScript(script: String, onProgress: ((Int) -> Unit)? = null): String {
         val startedAt = System.nanoTime()
         val process = ProcessBuilder("/system/bin/sh", "-c", script)
             .redirectErrorStream(true)
@@ -393,7 +497,15 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         val reader = thread(name = "guard-command-output", isDaemon = true) {
             process.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
-                    if (output.length < MAX_OUTPUT_LENGTH) output.appendLine(line)
+                    val progress = line
+                        .removePrefix(EnforcementScript.PROGRESS_PREFIX)
+                        .takeIf { it != line }
+                        ?.toIntOrNull()
+                    if (progress != null) {
+                        onProgress?.invoke(progress)
+                    } else if (output.length < MAX_OUTPUT_LENGTH) {
+                        output.appendLine(line)
+                    }
                 }
             }
         }
@@ -492,7 +604,11 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         return if (flattened.length > maxChars) flattened.take(maxChars) + "..." else flattened
     }
 
-    private fun runCommand(command: List<String>, timeoutSeconds: Long): CommandResult {
+    private fun runCommand(
+        command: List<String>,
+        timeoutSeconds: Long,
+        maxOutputLength: Int = MAX_OUTPUT_LENGTH,
+    ): CommandResult {
         val process = runCatching {
             ProcessBuilder(command)
                 .redirectErrorStream(true)
@@ -508,7 +624,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         val reader = thread(name = "privileged-command-output", isDaemon = true) {
             process.inputStream.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
-                    if (output.length < MAX_OUTPUT_LENGTH) output.appendLine(line)
+                    if (output.length < maxOutputLength) output.appendLine(line)
                 }
             }
         }
@@ -543,6 +659,12 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         val managed: Set<String>,
     )
 
+    private data class InstalledPackagesSnapshot(
+        val packagesByUser: Map<Int, Set<String>>,
+        val report: String,
+        val failed: Boolean,
+    )
+
     companion object {
         private const val TAG = "PowerKeeperFix/Shizuku"
         private const val COMMAND_TIMEOUT_SECONDS = 120L
@@ -551,6 +673,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val USER_LIST_COMMAND_TIMEOUT_SECONDS = 10L
         private const val FCM_POLL_SECONDS = 2L
         private const val MAX_OUTPUT_LENGTH = 64_000
+        private const val MAX_PACKAGE_LIST_OUTPUT_LENGTH = 512_000
         private const val MAX_PENDING_LOG_CHARS = 128_000
         private const val SETTINGS_BINARY = "/system/bin/settings"
         private const val SETTINGS_USER = "0"

@@ -109,6 +109,7 @@
     <string name="app_setting_failed_message">Could not apply %1$s setting: %2$s</string>
     <string name="frequency_changed_message">Check frequency changed to %1$s.</string>
     <string name="applying_settings_message">Applying settings…</string>
+    <string name="applying_progress">Applying %1$d / %2$d</string>
     <string name="settings_applied_message">Settings applied.</string>
     <string name="settings_partially_applied_message">Some settings need attention. See the last check or diagnostics for details.</string>
     <string name="settings_failed_message">Could not apply settings: %1$s</string>

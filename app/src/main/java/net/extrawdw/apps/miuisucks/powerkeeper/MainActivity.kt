@@ -27,6 +27,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -74,6 +75,14 @@ data class ShizukuStatus(
     val connectionState: ShizukuConnectionState = ShizukuConnectionState.CHECKING,
 )
 
+data class ApplyProgress(
+    val completedApps: Int,
+    val totalApps: Int,
+) {
+    val fraction: Float
+        get() = if (totalApps == 0) 1f else completedApps.toFloat() / totalApps
+}
+
 data class GuardUiState(
     val settings: GuardSettings = GuardSettings(
         appPolicies = AppPolicyDefaults.initialPolicies(),
@@ -84,6 +93,7 @@ data class GuardUiState(
     val shizuku: ShizukuStatus = ShizukuStatus(),
     val lastRun: LastRun? = null,
     val applying: Boolean = false,
+    val applyProgress: ApplyProgress? = null,
     val milletNoRestrictValue: String? = null,
     val checkingMilletValue: Boolean = false,
     val refreshingAndroidUsers: Boolean = false,
@@ -533,6 +543,7 @@ class MainActivity : ComponentActivity() {
             .map(AndroidUserSelection::userId)
         uiState = uiState.copy(
             applying = true,
+            applyProgress = ApplyProgress(0, settings.enabledAppPolicies.size),
             message = getString(R.string.applying_settings_message),
             messageIsError = false,
         )
@@ -544,6 +555,9 @@ class MainActivity : ComponentActivity() {
                     settings.enabledAppPolicies,
                     targetUserIds,
                     TRIGGER_UI_APPLY,
+                    onProgress = { completed, total ->
+                        uiState = uiState.copy(applyProgress = ApplyProgress(completed, total))
+                    },
                 )
             }
                 .onSuccess { report ->
@@ -551,6 +565,7 @@ class MainActivity : ComponentActivity() {
                     settingsStore.saveLastRun(succeeded, report)
                     uiState = uiState.copy(
                         applying = false,
+                        applyProgress = null,
                         lastRun = settingsStore.loadLastRun(),
                         message = getString(
                             if (succeeded) {
@@ -571,6 +586,7 @@ class MainActivity : ComponentActivity() {
                     settingsStore.saveLastRun(false, report)
                     uiState = uiState.copy(
                         applying = false,
+                        applyProgress = null,
                         lastRun = settingsStore.loadLastRun(),
                         message = report,
                         messageIsError = true,
@@ -947,15 +963,19 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
                 enabled = state.shizuku.granted && !state.applying,
             ) {
                 if (state.applying) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = LocalContentColor.current,
-                        strokeWidth = 2.dp,
-                    )
-                    Text(
-                        text = stringResource(R.string.applying),
-                        modifier = Modifier.padding(start = 10.dp),
-                    )
+                    val progress = state.applyProgress ?: ApplyProgress(0, 0)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(stringResource(R.string.applying_progress, progress.completedApps, progress.totalApps))
+                        LinearProgressIndicator(
+                            progress = { progress.fraction },
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = LocalContentColor.current,
+                        )
+                    }
                 } else {
                     Text(stringResource(R.string.apply_now))
                 }

@@ -5,6 +5,9 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -46,14 +49,29 @@ object PrivilegedServiceClient {
         policies: Collection<AppPolicy>,
         targetUserIds: List<Int>,
         trigger: String,
-    ): String =
-        withService("enforce", trigger) { connectedService ->
+        onProgress: (suspend (completedApps: Int, totalApps: Int) -> Unit)? = null,
+    ): String = coroutineScope {
+        val progressUpdates = onProgress?.let { Channel<Pair<Int, Int>>(Channel.UNLIMITED) }
+        val progressCollector = progressUpdates?.let { updates ->
+            launch {
+                for ((completed, total) in updates) onProgress?.invoke(completed, total)
+            }
+        }
+        val progressCallback = progressUpdates?.let { updates ->
+            object : IEnforcementProgressCallback.Stub() {
+                override fun onProgress(completedApps: Int, totalApps: Int) {
+                    updates.trySend(completedApps to totalApps)
+                }
+            }
+        }
+        try {
+            withService("enforce", trigger) { connectedService ->
             // Full passes never apply per-app AppOps or battery state for a disabled app.
             // Targeted disable cleanup uses applyAppPolicy() and remains intentionally exempt.
             val orderedPolicies = policies
                 .filter(AppPolicy::appEnabled)
                 .sortedBy(AppPolicy::packageName)
-            connectedService.enforce(
+            connectedService.enforceBatched(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 managedAurogonPackages.distinct().sorted().toTypedArray(),
                 orderedPolicies.map(AppPolicy::packageName).toTypedArray(),
@@ -67,8 +85,14 @@ object PrivilegedServiceClient {
                 orderedPolicies.map { it.dozePolicy.code }.toIntArray(),
                 targetUserIds.toIntArray(),
                 trigger,
+                progressCallback,
             )
+            }
+        } finally {
+            progressUpdates?.close()
+            progressCollector?.join()
         }
+    }
 
     suspend fun startFcmProtection(
         aurogonPackages: Collection<String>,
@@ -132,7 +156,7 @@ object PrivilegedServiceClient {
     private suspend fun <T> withService(
         operationName: String,
         trigger: String,
-        operation: (IPrivilegedService) -> T,
+        operation: suspend (IPrivilegedService) -> T,
     ): T = operationMutex.withLock {
         AppLog.i("ShizukuClient", "operation=$operationName trigger=$trigger connecting")
         val connectedService = connect()
@@ -207,7 +231,7 @@ object PrivilegedServiceClient {
 
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService AIDL surface changes so Shizuku replaces stale processes.
-    private const val USER_SERVICE_VERSION = 9
+    private const val USER_SERVICE_VERSION = 10
     private const val AUTOSTART_UNMANAGED = -1
     private const val AUTOSTART_DISABLED = 0
     private const val AUTOSTART_ENABLED = 1

@@ -101,6 +101,82 @@ class EnforcementScriptTest {
     }
 
     @Test
+    fun unresolvedPoliciesQueryInstalledPackagesOnlyOncePerUser() {
+        val policies = listOf(
+            AppPolicy("com.example.one", autostartEnabled = true, autostartManaged = true),
+            AppPolicy("com.example.two", autostartEnabled = true, autostartManaged = true),
+        )
+        val script = EnforcementScript.build(policies, applicationId, targetUsers = listOf(0, 999))
+
+        assertEquals(1, script.windowed("pm list packages --user '0'".length).count { it == "pm list packages --user '0'" })
+        assertEquals(1, script.windowed("pm list packages --user '999'".length).count { it == "pm list packages --user '999'" })
+        assertFalse(script.contains("grep -Fxq"))
+        assertFalse(script.contains("pm list packages --user \"\$1\" \"\$2\""))
+    }
+
+    @Test
+    fun resolvedBatchDoesNotQueryPackagesAndTargetsOnlyInstalledUsers() {
+        val policy = AppPolicy(
+            "com.example.push",
+            autostartEnabled = true,
+            autostartManaged = true,
+            dozePolicy = AppDozePolicy.DEFAULT,
+        )
+        val script = EnforcementScript.build(
+            policies = listOf(policy),
+            applicationId = applicationId,
+            targetUsers = listOf(0, 999),
+            installedPackagesByUser = mapOf(
+                0 to setOf(policy.packageName),
+                999 to emptySet(),
+            ),
+        )
+
+        assertFalse(script.contains("pm list packages"))
+        assertTrue(script.contains("--user \"0\" '${policy.packageName}' '10008' 'allow'"))
+        assertFalse(script.contains("--user \"999\" '${policy.packageName}' '10008'"))
+        assertTrue(script.contains("${policy.packageName} user 999: skipped (not installed)"))
+    }
+
+    @Test
+    fun intermediateBatchOmitsSelfProtectionAndWriteSettings() {
+        val script = EnforcementScript.build(
+            policies = listOf(autoUnrestrictedPolicy),
+            applicationId = applicationId,
+            includeSelfProtection = false,
+            includeWriteSettings = false,
+            installedPackagesByUser = mapOf(0 to setOf(autoUnrestrictedPackage)),
+        )
+
+        assertFalse(script.contains("Self-protection"))
+        assertFalse(script.contains("cmd appops write-settings"))
+    }
+
+    @Test
+    fun resolvedBatchEmitsPerAppProgressIncludingUnmanagedApps() {
+        val policies = listOf(
+            AppPolicy("com.example.managed", autostartEnabled = true, autostartManaged = true),
+            AppPolicy("com.example.unmanaged"),
+        )
+        val script = EnforcementScript.build(
+            policies = policies,
+            applicationId = applicationId,
+            targetUsers = listOf(0),
+            installedPackagesByUser = mapOf(0 to policies.map(AppPolicy::packageName).toSet()),
+            progressStartIndex = 40,
+        )
+
+        assertTrue(script.contains("${EnforcementScript.PROGRESS_PREFIX}41"))
+        assertTrue(script.contains("${EnforcementScript.PROGRESS_PREFIX}42"))
+        assertTrue(script.contains("com.example.unmanaged: no per-app policy selected"))
+
+        val process = ProcessBuilder("/bin/sh", "-n").start()
+        process.outputStream.bufferedWriter().use { it.write(script) }
+        val error = process.errorStream.bufferedReader().readText()
+        assertEquals(error, 0, process.waitFor())
+    }
+
+    @Test
     fun scriptDoesNotAlterPowerKeeper() {
         val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
 

@@ -232,19 +232,18 @@ private fun AppPolicySheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (policy.periodicEnforcement) {
-                PolicySwitchRow(
-                    title = stringResource(R.string.app_doze_off),
-                    description = stringResource(R.string.app_doze_off_description),
-                    checked = policy.dozePolicy == AppDozePolicy.OFF,
-                    onCheckedChange = { doNotChange ->
-                        onDozeChanged(
-                            app.packageName,
-                            if (doNotChange) AppDozePolicy.OFF else AppDozePolicy.UNRESTRICTED,
-                        )
-                    },
-                )
-            }
+            val doNotChange = policy.dozePolicy == AppDozePolicy.OFF
+            PolicySwitchRow(
+                title = stringResource(R.string.app_doze_off),
+                description = stringResource(R.string.app_doze_off_description),
+                checked = doNotChange,
+                onCheckedChange = { checked ->
+                    onDozeChanged(
+                        app.packageName,
+                        if (checked) AppDozePolicy.OFF else policy.selectedDozePolicy,
+                    )
+                },
+            )
             val batteryPolicies = listOf(
                 AppDozePolicy.UNRESTRICTED,
                 AppDozePolicy.DEFAULT,
@@ -253,22 +252,20 @@ private fun AppPolicySheet(
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 batteryPolicies.forEachIndexed { index, batteryPolicy ->
                     SegmentedButton(
-                        selected = policy.dozePolicy == batteryPolicy,
+                        selected = policy.selectedDozePolicy == batteryPolicy,
                         onClick = { onDozeChanged(app.packageName, batteryPolicy) },
+                        enabled = !doNotChange,
                         shape = SegmentedButtonDefaults.itemShape(index, batteryPolicies.size),
                     ) {
                         Text(stringResource(batteryPolicy.titleRes), maxLines = 1)
                     }
                 }
             }
-            val selectedBatteryPolicy = policy.dozePolicy.takeUnless { it == AppDozePolicy.OFF }
-            selectedBatteryPolicy?.let {
-                Text(
-                    stringResource(it.descriptionRes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                stringResource(policy.selectedDozePolicy.descriptionRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

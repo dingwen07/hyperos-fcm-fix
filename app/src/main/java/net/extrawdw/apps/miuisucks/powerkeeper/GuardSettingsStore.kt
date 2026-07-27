@@ -78,7 +78,7 @@ class GuardSettingsStore(context: Context) {
     }
 
     fun setDozePolicy(packageName: String, policy: AppDozePolicy) {
-        updateAppPolicy(packageName) { it.copy(dozePolicy = policy) }
+        updateAppPolicy(packageName) { it.withDozePolicy(policy) }
     }
 
     fun setPeriodicEnforcement(packageName: String, enabled: Boolean) {
@@ -192,18 +192,19 @@ class GuardSettingsStore(context: Context) {
             if (policy.autostartEnabled) "1" else "0",
             if (policy.autostartManaged) "1" else "0",
             policy.dozePolicy.persistedValue,
+            policy.selectedDozePolicy.persistedValue,
             if (policy.periodicEnforcement) "1" else "0",
         ).joinToString("|")
 
         internal fun decodeAppPolicy(encoded: String): AppPolicy? {
             val fields = encoded.split('|')
-            if (fields.size != 8 || !PACKAGE_NAME.matches(fields[0])) return null
+            if (fields.size != 9 || !PACKAGE_NAME.matches(fields[0])) return null
             val appEnabled = fields[1]
             val aurogonEnabled = fields[2]
             val aurogonManaged = fields[3]
             val autostartEnabled = fields[4]
             val autostartManaged = fields[5]
-            val periodic = fields[7]
+            val periodic = fields[8]
             if (listOf(appEnabled, aurogonEnabled, aurogonManaged, autostartEnabled, autostartManaged, periodic).any { it !in setOf("0", "1") }) return null
             return AppPolicy(
                 packageName = fields[0],
@@ -213,6 +214,9 @@ class GuardSettingsStore(context: Context) {
                 autostartEnabled = autostartEnabled == "1",
                 autostartManaged = autostartManaged == "1",
                 dozePolicy = AppDozePolicy.fromPersistedValue(fields[6]),
+                selectedDozePolicy = AppDozePolicy.fromPersistedValue(fields[7])
+                    .takeUnless { it == AppDozePolicy.OFF }
+                    ?: AppDozePolicy.DEFAULT,
                 periodicEnforcement = periodic == "1",
             )
         }

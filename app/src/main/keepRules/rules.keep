@@ -13,3 +13,5 @@
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.PowerKeeperUserService { *; }
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.IPrivilegedService { *; }
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.IPrivilegedService$Stub { *; }
+-keep class net.extrawdw.apps.miuisucks.powerkeeper.IEnforcementProgressCallback { *; }
+-keep class net.extrawdw.apps.miuisucks.powerkeeper.IEnforcementProgressCallback$Stub { *; }

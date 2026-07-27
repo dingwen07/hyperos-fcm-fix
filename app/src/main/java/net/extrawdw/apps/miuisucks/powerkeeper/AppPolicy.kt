@@ -47,6 +47,7 @@ data class AppPolicy(
     val autostartEnabled: Boolean = false,
     val autostartManaged: Boolean = false,
     val dozePolicy: AppDozePolicy = AppDozePolicy.OFF,
+    val selectedDozePolicy: AppDozePolicy = AppDozePolicy.DEFAULT,
     val periodicEnforcement: Boolean = false,
 ) {
     fun withAppEnabled(enabled: Boolean): AppPolicy =
@@ -62,6 +63,13 @@ data class AppPolicy(
             )
         } else {
             copy(appEnabled = true)
+        }
+
+    fun withDozePolicy(policy: AppDozePolicy): AppPolicy =
+        if (policy == AppDozePolicy.OFF) {
+            copy(dozePolicy = AppDozePolicy.OFF)
+        } else {
+            copy(dozePolicy = policy, selectedDozePolicy = policy)
         }
 }
 

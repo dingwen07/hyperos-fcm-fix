@@ -38,6 +38,7 @@ class GuardSettingsStoreTest {
             autostartEnabled = false,
             autostartManaged = true,
             dozePolicy = AppDozePolicy.RESTRICTED,
+            selectedDozePolicy = AppDozePolicy.RESTRICTED,
             periodicEnforcement = false,
         )
 
@@ -54,6 +55,7 @@ class GuardSettingsStoreTest {
             assertTrue(AppPolicyDefaults.forPackage(packageName).aurogonEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).autostartEnabled)
             assertEquals(AppDozePolicy.DEFAULT, AppPolicyDefaults.forPackage(packageName).dozePolicy)
+            assertEquals(AppDozePolicy.DEFAULT, AppPolicyDefaults.forPackage(packageName).selectedDozePolicy)
             assertTrue(AppPolicyDefaults.forPackage(packageName).periodicEnforcement)
         }
 
@@ -62,6 +64,7 @@ class GuardSettingsStoreTest {
         assertFalse(other.aurogonEnabled)
         assertFalse(other.autostartEnabled)
         assertEquals(AppDozePolicy.OFF, other.dozePolicy)
+        assertEquals(AppDozePolicy.DEFAULT, other.selectedDozePolicy)
         assertFalse(other.periodicEnforcement)
     }
 
@@ -115,6 +118,20 @@ class GuardSettingsStoreTest {
         assertTrue(enabled.autostartEnabled)
         assertTrue(enabled.autostartManaged)
         assertEquals(AppDozePolicy.OFF, enabled.dozePolicy)
+        assertEquals(AppDozePolicy.DEFAULT, enabled.selectedDozePolicy)
+    }
+
+    @Test
+    fun doNotChangePreservesSelectionAndRestoringManagementUsesIt() {
+        val unrestricted = AppPolicy("com.example.push").withDozePolicy(AppDozePolicy.UNRESTRICTED)
+        val unchanged = unrestricted.withDozePolicy(AppDozePolicy.OFF)
+
+        assertEquals(AppDozePolicy.OFF, unchanged.dozePolicy)
+        assertEquals(AppDozePolicy.UNRESTRICTED, unchanged.selectedDozePolicy)
+        assertEquals(
+            unrestricted,
+            unchanged.withDozePolicy(unchanged.selectedDozePolicy),
+        )
     }
 
     @Test
@@ -163,7 +180,7 @@ class GuardSettingsStoreTest {
     }
 
     @Test
-    fun legacySevenFieldPolicyIsNotDecoded() {
-        assertEquals(null, GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|1|1|default|1"))
+    fun previousEightFieldPolicyIsNotDecoded() {
+        assertEquals(null, GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|1|1|1|default|1"))
     }
 }

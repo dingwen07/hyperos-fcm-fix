@@ -25,6 +25,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private val fcmRepairLock = Any()
     private val aurogonRepairLock = Any()
     private var desiredAurogon: Set<String> = emptySet()
+    private var autostartSwitchOpAvailable: Boolean? = null
     private var fcmPolling: ScheduledFuture<*>? = null
     private val serviceLogLock = Any()
     private val serviceLogTimeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
@@ -79,6 +80,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         )
         val batches = EnforcementBatching.split(policies)
         val targetUsers = targetUserIds.distinct().sorted()
+        val includeAutostartSwitchOp = isAutostartSwitchOpAvailable()
         serviceLog(
             'I',
             "Enforce",
@@ -97,6 +99,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                                 policies = emptyList(),
                                 applicationId = BuildConfig.APPLICATION_ID,
                                 targetUsers = targetUsers,
+                                includeAutostartSwitchOp = includeAutostartSwitchOp,
                             ),
                         ),
                     )
@@ -114,6 +117,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                                     includeWriteSettings = index == batches.lastIndex,
                                     installedPackagesByUser = installedSnapshot.packagesByUser,
                                     progressStartIndex = completed,
+                                    includeAutostartSwitchOp = includeAutostartSwitchOp,
                                 ),
                                 onProgress = { processed ->
                                     notifyProgress(progressCallback, processed, policies.size)
@@ -269,6 +273,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             applicationId = BuildConfig.APPLICATION_ID,
             targetUsers = targetUserIds.toList(),
             includeSelfProtection = false,
+            includeAutostartSwitchOp = isAutostartSwitchOpAvailable(),
         )
         serviceLog(
             'I',
@@ -290,6 +295,32 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             desiredAurogon = desired
         }
         return desired
+    }
+
+    /**
+     * The Xiaomi Autostart switch AppOp (10053) does not exist on some ROMs (e.g. HyperOS 1),
+     * where AppOpsService rejects it with "Bad operation #10053" and every write fails.
+     * Probe with the same command shape on our own package once per service process: the
+     * mutation only ever affects our own app and is identical to the self-protection write.
+     */
+    private fun isAutostartSwitchOpAvailable(): Boolean {
+        autostartSwitchOpAvailable?.let { return it }
+        val result = runCommand(
+            listOf(
+                CMD_BINARY,
+                "appops",
+                "set",
+                "--user",
+                "0",
+                BuildConfig.APPLICATION_ID,
+                EnforcementScript.MIUI_AUTOSTART_SWITCH_OP.toString(),
+                "allow",
+            ),
+            SETTINGS_COMMAND_TIMEOUT_SECONDS,
+        )
+        val available = result.succeeded
+        autostartSwitchOpAvailable = available
+        return available
     }
 
     override fun getMilletNoRestrictValue(trigger: String): String {
@@ -686,5 +717,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val SETTINGS_USER = "0"
         private const val DUMPSYS_BINARY = "/system/bin/dumpsys"
         private const val PM_BINARY = "/system/bin/pm"
+        private const val CMD_BINARY = "/system/bin/cmd"
     }
 }

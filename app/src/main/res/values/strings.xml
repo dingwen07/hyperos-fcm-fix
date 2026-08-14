@@ -105,6 +105,7 @@
     <string name="shizuku_access_denied_previously_message">Authorization was denied previously. Re-enable this app in Shizuku.</string>
     <string name="shizuku_request_failed_message">Could not request Shizuku access: %1$s</string>
     <string name="shizuku_not_installed_message">Shizuku is not installed.</string>
+    <string name="shizuku_service_timeout_message">Shizuku user service connection timed out. Restart Shizuku, then try again.</string>
     <string name="app_setting_changed_message">%1$s settings changed. Applying once…</string>
     <string name="app_setting_saved_message">%1$s settings saved.</string>
     <string name="app_setting_applied_message">%1$s setting applied.</string>

@@ -60,6 +60,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.extrawdw.apps.miuisucks.powerkeeper.ui.theme.MIUIPowerKeeperFixTheme
@@ -584,7 +585,7 @@ class MainActivity : ComponentActivity() {
                 AppLog.e("UI/Periodic", "stale periodic enforcement failed", error)
                 settingsStore.saveLastRun(
                     false,
-                    getString(R.string.settings_failed_message, error.message ?: error.javaClass.simpleName),
+                    getString(R.string.settings_failed_message, error.uiFailureMessage()),
                 )
                 uiState = uiState.copy(lastRun = settingsStore.loadLastRun())
             }
@@ -646,7 +647,7 @@ class MainActivity : ComponentActivity() {
                 .onFailure { error ->
                     val report = getString(
                         R.string.settings_failed_message,
-                        error.message ?: error.javaClass.simpleName,
+                        error.uiFailureMessage(),
                     )
                     settingsStore.saveLastRun(false, report)
                     uiState = uiState.copy(
@@ -691,7 +692,7 @@ class MainActivity : ComponentActivity() {
                     refreshingAndroidUsers = false,
                     message = getString(
                         R.string.android_profiles_refresh_failed_message,
-                        error.message ?: getString(R.string.unknown_error),
+                        error.uiFailureMessage(),
                     ),
                     messageIsError = true,
                 )
@@ -736,7 +737,7 @@ class MainActivity : ComponentActivity() {
                         checkingMilletValue = false,
                         message = getString(
                             R.string.protection_status_failed_message,
-                            error.message ?: getString(R.string.unknown_error),
+                            error.uiFailureMessage(),
                         ),
                         messageIsError = true,
                     )
@@ -749,6 +750,11 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             runCatching { PrivilegedServiceClient.flushServiceLogs(TRIGGER_UI_LOGS) }
         }
+    }
+
+    private fun Throwable.uiFailureMessage(): String = when (this) {
+        is TimeoutCancellationException -> getString(R.string.shizuku_service_timeout_message)
+        else -> message ?: getString(R.string.unknown_error)
     }
 
     private fun formatInterval(minutes: Long): String = when (minutes) {

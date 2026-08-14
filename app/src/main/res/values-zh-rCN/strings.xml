@@ -103,6 +103,7 @@
     <string name="shizuku_access_denied_previously_message">之前的授权已被拒绝，请在 Shizuku 中重新启用本应用。</string>
     <string name="shizuku_request_failed_message">无法请求 Shizuku 权限：%1$s</string>
     <string name="shizuku_not_installed_message">未安装 Shizuku。</string>
+    <string name="shizuku_service_timeout_message">Shizuku 用户服务连接超时，请重启 Shizuku 后重试。</string>
     <string name="app_setting_changed_message">%1$s 的设置已更改，正在应用一次…</string>
     <string name="app_setting_saved_message">已保存 %1$s 的设置。</string>
     <string name="app_setting_applied_message">已应用 %1$s 的设置。</string>

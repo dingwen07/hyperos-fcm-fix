@@ -20,6 +20,7 @@ object EnforcementScript {
         includeWriteSettings: Boolean = true,
         installedPackagesByUser: Map<Int, Set<String>>? = null,
         progressStartIndex: Int? = null,
+        includeAutostartSwitchOp: Boolean = true,
     ): String {
         require(PACKAGE_NAME.matches(applicationId)) { "Invalid application ID" }
         require(policies.all { PACKAGE_NAME.matches(it.packageName) }) { "Invalid package name" }
@@ -50,8 +51,11 @@ object EnforcementScript {
                 normalizedTargetUsers,
                 installedPackagesByUser,
                 progressStartIndex,
+                includeAutostartSwitchOp,
             )
-            if (includeSelfProtection) appendSelfProtectionCommands(applicationId)
+            if (includeSelfProtection) {
+                appendSelfProtectionCommands(applicationId, includeAutostartSwitchOp)
+            }
             if (includeWriteSettings) appendLine("run_quiet cmd appops write-settings")
             appendLine("printf 'summary: %s/%s commands succeeded; %s failed\\n' \"\$succeeded\" \"\$attempts\" \"\$failed\"")
             appendLine("if [ \"\$failed\" -eq 0 ]; then exit 0; else exit 2; fi")
@@ -63,6 +67,7 @@ object EnforcementScript {
         targetUsers: List<Int>,
         installedPackagesByUser: Map<Int, Set<String>>?,
         progressStartIndex: Int?,
+        includeAutostartSwitchOp: Boolean,
     ) {
         if (installedPackagesByUser != null && progressStartIndex != null) {
             appendResolvedAppCommands(
@@ -70,6 +75,7 @@ object EnforcementScript {
                 targetUsers,
                 installedPackagesByUser,
                 progressStartIndex,
+                includeAutostartSwitchOp,
             )
             return
         }
@@ -84,10 +90,10 @@ object EnforcementScript {
         }
 
         if (installedPackagesByUser != null) {
-            appendResolvedAppCommands(actionable, targetUsers, installedPackagesByUser, null)
+            appendResolvedAppCommands(actionable, targetUsers, installedPackagesByUser, null, includeAutostartSwitchOp)
         } else {
             appendInstalledPackageSnapshot(targetUsers)
-            appendRuntimeAppCommands(actionable, targetUsers)
+            appendRuntimeAppCommands(actionable, targetUsers, includeAutostartSwitchOp)
         }
     }
 
@@ -126,6 +132,7 @@ object EnforcementScript {
     private fun StringBuilder.appendRuntimeAppCommands(
         policies: Collection<AppPolicy>,
         targetUsers: List<Int>,
+        includeAutostartSwitchOp: Boolean,
     ) {
         policies.forEachIndexed { index, policy ->
             val variable = "app_found_$index"
@@ -133,7 +140,7 @@ object EnforcementScript {
             appendLine("for target_user in ${targetUsers.joinToString(" ")}; do")
             appendLine("  if is_installed \"\$target_user\" '${policy.packageName}'; then")
             appendLine("    $variable=1")
-            appendPolicyMutations(policy, "\$target_user", "    ")
+            appendPolicyMutations(policy, "\$target_user", "    ", includeAutostartSwitchOp)
             appendLine("    printf '${policy.packageName} user %s: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${if (policy.dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"}\\n' \"\$target_user\"")
             appendLine("  else")
             appendLine("    printf '${policy.packageName} user %s: skipped (not installed)\\n' \"\$target_user\"")
@@ -153,6 +160,7 @@ object EnforcementScript {
         targetUsers: List<Int>,
         installedPackagesByUser: Map<Int, Set<String>>,
         progressStartIndex: Int?,
+        includeAutostartSwitchOp: Boolean,
     ) {
         policies.forEachIndexed { index, policy ->
             if (policy.autostartManaged || policy.dozeManaged) {
@@ -160,7 +168,7 @@ object EnforcementScript {
                 targetUsers.forEach { userId ->
                     if (policy.packageName in installedPackagesByUser[userId].orEmpty()) {
                         installed = true
-                        appendPolicyMutations(policy, userId.toString(), "")
+                        appendPolicyMutations(policy, userId.toString(), "", includeAutostartSwitchOp)
                         appendLine("printf '${policy.packageName} user $userId: autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} doze=${if (policy.dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"}\\n'")
                     } else {
                         appendLine("printf '${policy.packageName} user $userId: skipped (not installed)\\n'")
@@ -183,11 +191,14 @@ object EnforcementScript {
         policy: AppPolicy,
         userId: String,
         indent: String,
+        includeAutostartSwitchOp: Boolean,
     ) {
         if (policy.autostartManaged) {
             val mode = if (policy.autostartEnabled) "allow" else "ignore"
             appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' '$MIUI_AUTOSTART_OP' '$mode'")
-            appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' '$MIUI_AUTOSTART_SWITCH_OP' '$mode'")
+            if (includeAutostartSwitchOp) {
+                appendLine("${indent}run_quiet cmd appops set --user \"$userId\" '${policy.packageName}' '$MIUI_AUTOSTART_SWITCH_OP' '$mode'")
+            }
         }
         if (policy.dozeManaged) {
             val mode = if (policy.dozePolicy == AppDozePolicy.RESTRICTED) "ignore" else "allow"
@@ -196,14 +207,16 @@ object EnforcementScript {
         }
     }
 
-    private fun StringBuilder.appendSelfProtectionCommands(applicationId: String) {
+    private fun StringBuilder.appendSelfProtectionCommands(applicationId: String, includeAutostartSwitchOp: Boolean) {
         appendLine("printf 'Self-protection: user 0\\n'")
         appendLine("run_quiet cmd deviceidle whitelist '+$applicationId'")
         appendLine("run_quiet cmd appops set --user 0 '$applicationId' RUN_IN_BACKGROUND allow")
         appendLine("run_quiet cmd appops set --user 0 '$applicationId' RUN_ANY_IN_BACKGROUND allow")
-        selfProtectionMiuiOps.forEach { op ->
-            appendLine("run_quiet cmd appops set --user 0 '$applicationId' '$op' allow")
-        }
+        selfProtectionMiuiOps
+            .filter { includeAutostartSwitchOp || it != MIUI_AUTOSTART_SWITCH_OP }
+            .forEach { op ->
+                appendLine("run_quiet cmd appops set --user 0 '$applicationId' '$op' allow")
+            }
         appendLine("run_quiet am set-inactive --user 0 '$applicationId' false")
         appendLine("run_quiet am set-standby-bucket --user 0 '$applicationId' active")
     }
@@ -213,5 +226,5 @@ object EnforcementScript {
     private const val MIUI_AUTOSTART_OP = 10008
     private const val MIUI_BACKGROUND_START_ACTIVITY_OP = 10021
     private const val MIUI_SERVICE_FOREGROUND_OP = 10023
-    private const val MIUI_AUTOSTART_SWITCH_OP = 10053
+    const val MIUI_AUTOSTART_SWITCH_OP = 10053
 }

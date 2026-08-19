@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
                         onOpenFcmDiagnostics = ::openFcmDiagnostics,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
+                        onAutoUnstopChanged = ::setAutoUnstopEnabled,
                         onAutostartManagedChanged = ::setAutostartManaged,
                         onAutostartChanged = ::setAutostartEnabled,
                         onPeriodicChanged = ::setPeriodicEnforcement,
@@ -405,6 +406,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun setAutoUnstopEnabled(packageName: String, enabled: Boolean) {
+        settingsStore.setAutoUnstopEnabled(packageName, enabled)
+        refreshAppSetting(packageName, willApply = false)
+    }
+
     private fun setAutostartManaged(packageName: String, managed: Boolean) {
         settingsStore.setAutostartManaged(packageName, managed)
         val policy = refreshAppSetting(packageName, willApply = managed).policyFor(packageName)
@@ -616,7 +622,7 @@ class MainActivity : ComponentActivity() {
         )
         lifecycleScope.launch {
             runCatching {
-                PrivilegedServiceClient.enforce(
+                val enforcementReport = PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
                     settings.enabledAppPolicies,
                     targetUserIds,
@@ -625,6 +631,16 @@ class MainActivity : ComponentActivity() {
                         uiState = uiState.copy(applyProgress = ApplyProgress(completed, total))
                     },
                 )
+                val unstopReport = if (settings.autoUnstopPackages.isEmpty()) {
+                    "Auto unstop: no packages selected"
+                } else {
+                    PrivilegedServiceClient.unstop(
+                        settings.autoUnstopPackages,
+                        targetUserIds,
+                        "ui:apply-auto-unstop",
+                    )
+                }
+                "$enforcementReport\n$unstopReport"
             }
                 .onSuccess { report ->
                     val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")
@@ -813,6 +829,7 @@ private fun GuardApp(
     onOpenFcmDiagnostics: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
@@ -917,6 +934,7 @@ private fun GuardApp(
                 modifier = Modifier.padding(innerPadding),
                 onAppEnabledChanged = onAppEnabledChanged,
                 onAurogonChanged = onAurogonChanged,
+                onAutoUnstopChanged = onAutoUnstopChanged,
                 onAutostartManagedChanged = onAutostartManagedChanged,
                 onAutostartChanged = onAutostartChanged,
                 onPeriodicChanged = onPeriodicChanged,
@@ -1020,6 +1038,7 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
     val statusText = stringResource(
         R.string.protection_summary,
         state.settings.aurogonEnabledPackages.size,
+        state.settings.autoUnstopPackages.size,
         policies.count { it.autostartManaged && it.autostartEnabled },
         state.settings.periodicallyEnforcedAppPolicies.size,
     )

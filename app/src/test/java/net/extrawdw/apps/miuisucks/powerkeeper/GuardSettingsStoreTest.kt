@@ -34,6 +34,7 @@ class GuardSettingsStoreTest {
             packageName = "com.example.push",
             appEnabled = true,
             aurogonEnabled = true,
+            autoUnstopEnabled = true,
             autostartManaged = true,
             autostartEnabled = false,
             dozeManaged = true,
@@ -42,7 +43,7 @@ class GuardSettingsStoreTest {
         )
 
         val encoded = GuardSettingsStore.encodeAppPolicy(policy)
-        assertEquals(8, encoded.split('|').size)
+        assertEquals(9, encoded.split('|').size)
         assertEquals(policy, GuardSettingsStore.decodeAppPolicy(encoded))
     }
 
@@ -54,6 +55,7 @@ class GuardSettingsStoreTest {
         AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.forEach { packageName ->
             assertTrue(AppPolicyDefaults.forPackage(packageName).appEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).aurogonEnabled)
+            assertTrue(AppPolicyDefaults.forPackage(packageName).autoUnstopEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).autostartManaged)
             assertTrue(AppPolicyDefaults.forPackage(packageName).autostartEnabled)
             assertTrue(AppPolicyDefaults.forPackage(packageName).dozeManaged)
@@ -64,6 +66,7 @@ class GuardSettingsStoreTest {
         val other = AppPolicyDefaults.forPackage("com.example.push")
         assertFalse(other.appEnabled)
         assertFalse(other.aurogonEnabled)
+        assertFalse(other.autoUnstopEnabled)
         assertFalse(other.autostartManaged)
         assertFalse(other.autostartEnabled)
         assertFalse(other.dozeManaged)
@@ -117,6 +120,7 @@ class GuardSettingsStoreTest {
 
         assertTrue(enabled.appEnabled)
         assertTrue(enabled.aurogonEnabled)
+        assertTrue(enabled.autoUnstopEnabled)
         assertTrue(enabled.autostartManaged)
         assertTrue(enabled.autostartEnabled)
         assertFalse(enabled.dozeManaged)
@@ -166,18 +170,21 @@ class GuardSettingsStoreTest {
             packageName = "com.example.enabled.periodic",
             appEnabled = true,
             aurogonEnabled = true,
+            autoUnstopEnabled = true,
             periodicEnforcement = true,
         )
         val enabledManualOnly = AppPolicy(
             packageName = "com.example.enabled.manual",
             appEnabled = true,
             aurogonEnabled = false,
+            autoUnstopEnabled = true,
             periodicEnforcement = false,
         )
         val disabledPeriodic = AppPolicy(
             packageName = "com.example.disabled.periodic",
             appEnabled = false,
             aurogonEnabled = true,
+            autoUnstopEnabled = true,
             autostartEnabled = true,
             dozePolicy = AppDozePolicy.UNRESTRICTED,
             periodicEnforcement = true,
@@ -195,10 +202,26 @@ class GuardSettingsStoreTest {
         )
         assertEquals(listOf(enabledPeriodic), settings.periodicallyEnforcedAppPolicies)
         assertEquals(listOf(enabledPeriodic.packageName), settings.aurogonEnabledPackages)
+        assertEquals(
+            listOf(enabledManualOnly.packageName, enabledPeriodic.packageName),
+            settings.autoUnstopPackages,
+        )
     }
 
     @Test
-    fun previousSevenFieldPolicyIsNotDecoded() {
+    fun previousEightFieldPolicyDefaultsAutoUnstopToAppEnabled() {
+        val decoded = GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|1|0|1|default|1")
+
+        assertEquals(true, decoded?.appEnabled)
+        assertEquals(true, decoded?.aurogonEnabled)
+        assertEquals(true, decoded?.autoUnstopEnabled)
+        assertEquals(true, decoded?.autostartManaged)
+        assertEquals(AppDozePolicy.DEFAULT, decoded?.dozePolicy)
+        assertEquals(true, decoded?.periodicEnforcement)
+    }
+
+    @Test
+    fun malformedLegacyPolicyIsNotDecoded() {
         assertEquals(
             null,
             GuardSettingsStore.decodeAppPolicy("com.example.push|1|1|1|default|default|1"),

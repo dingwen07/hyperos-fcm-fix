@@ -236,6 +236,28 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         return report
     }
 
+    override fun unstop(
+        packageNames: Array<out String>,
+        targetUserIds: IntArray,
+        trigger: String,
+    ): String {
+        val packages = packageNames.distinct().sorted()
+        val users = targetUserIds.distinct().sorted()
+        require(users.all { it >= 0 }) { "Invalid Android user ID" }
+        serviceLog(
+            'I',
+            "Unstop",
+            "start trigger=$trigger packages=${packages.size} users=${users.joinToString()}",
+        )
+        val report = runScript(UnstopScript.build(packages, users))
+        serviceLog(
+            if (report.contains("FAILED") || report.contains("exit_code=")) 'E' else 'I',
+            "Unstop",
+            "finish trigger=$trigger report=${report.singleLine(2_000)}",
+        )
+        return report
+    }
+
     override fun reconcileAurogon(
         aurogonPackages: Array<out String>,
         trigger: String,

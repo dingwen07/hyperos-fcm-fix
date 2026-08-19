@@ -18,7 +18,7 @@
     <string name="manage">Manage</string>
 
     <string name="automatic_protection">Automatic protection</string>
-    <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Autostart: %2$d apps · Periodic AppOps: %3$d apps.</string>
+    <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Auto unstop: %2$d apps · Autostart: %3$d apps · Periodic AppOps: %4$d apps.</string>
     <string name="applying">Applying…</string>
     <string name="apply_now">Apply now</string>
 
@@ -40,12 +40,14 @@
 
     <string name="aurogon_protection">Aurogon FCM protection</string>
     <string name="aurogon_protection_description">Wake this app when HyperOS would cache its frozen FCM broadcast.</string>
+    <string name="auto_unstop">Auto unstop</string>
+    <string name="auto_unstop_description">Periodically clear FLAG_STOPPED for this FCM app without launching it. This runs independently of Periodic enforcement.</string>
     <string name="miui_autostart">HyperOS Autostart</string>
     <string name="miui_autostart_description">Manage both Xiaomi Autostart AppOps. When off, leave Autostart unchanged.</string>
     <string name="policy_enabled">Enabled</string>
     <string name="policy_disabled">Disabled</string>
     <string name="periodic_enforcement">Periodic enforcement</string>
-    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization settings only when their management switches are enabled. Aurogon remains enforced independently.</string>
+    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization settings only when their management switches are enabled. Aurogon and Auto unstop run independently.</string>
     <string name="aosp_doze_policy">AOSP Battery optimization</string>
     <string name="aosp_doze_policy_description">Manage this setting for the selected Android profiles. When off, leave it unchanged.</string>
     <string name="app_doze_unrestricted">Unrestricted</string>
@@ -68,7 +70,7 @@
     <string name="fcm_diagnostics_unavailable_message">FCM Diagnostics is not available in this version of Google Play services.</string>
 
     <string name="check_frequency">Periodical enforcement frequency</string>
-    <string name="check_frequency_description">How often apps with Periodic enforcement enabled have only their managed HyperOS Autostart and AOSP Battery optimization settings restored. Off disables this per-app task; the separate 15-minute Aurogon and GMS recovery task remains scheduled.</string>
+    <string name="check_frequency_description">How often apps with Periodic enforcement enabled have only their managed HyperOS Autostart and AOSP Battery optimization settings restored. Off disables this per-app task; the separate 15-minute Aurogon, Auto unstop, and GMS recovery task remains scheduled.</string>
     <string name="off">Off</string>
     <string name="interval_minutes">%1$d min</string>
     <string name="interval_one_hour">1 hour</string>

@@ -37,6 +37,7 @@ data class AppPolicy(
     val packageName: String,
     val appEnabled: Boolean = false,
     val aurogonEnabled: Boolean = false,
+    val autoUnstopEnabled: Boolean = false,
     val autostartManaged: Boolean = false,
     val autostartEnabled: Boolean = false,
     val dozeManaged: Boolean = false,
@@ -50,6 +51,7 @@ data class AppPolicy(
             copy(
                 appEnabled = true,
                 aurogonEnabled = true,
+                autoUnstopEnabled = true,
                 autostartManaged = true,
                 autostartEnabled = true,
             )
@@ -85,6 +87,7 @@ object AppPolicyDefaults {
                 packageName = packageName,
                 appEnabled = true,
                 aurogonEnabled = true,
+                autoUnstopEnabled = true,
                 autostartManaged = true,
                 autostartEnabled = true,
                 dozeManaged = true,

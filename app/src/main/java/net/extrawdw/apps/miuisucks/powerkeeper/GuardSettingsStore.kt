@@ -17,6 +17,12 @@ data class GuardSettings(
             .map(AppPolicy::packageName)
             .sorted()
 
+    val autoUnstopPackages: List<String>
+        get() = appPolicies.values
+            .filter { it.appEnabled && it.autoUnstopEnabled }
+            .map(AppPolicy::packageName)
+            .sorted()
+
     val enabledAppPolicies: List<AppPolicy>
         get() = appPolicies.values
             .filter(AppPolicy::appEnabled)
@@ -65,6 +71,12 @@ class GuardSettingsStore(context: Context) {
     fun setAurogonEnabled(packageName: String, enabled: Boolean) {
         updateAppPolicy(packageName) { current ->
             (current ?: AppPolicyDefaults.forPackage(packageName)).copy(aurogonEnabled = enabled)
+        }
+    }
+
+    fun setAutoUnstopEnabled(packageName: String, enabled: Boolean) {
+        updateAppPolicy(packageName) { current ->
+            (current ?: AppPolicyDefaults.forPackage(packageName)).copy(autoUnstopEnabled = enabled)
         }
     }
 
@@ -200,6 +212,7 @@ class GuardSettingsStore(context: Context) {
             policy.packageName,
             if (policy.appEnabled) "1" else "0",
             if (policy.aurogonEnabled) "1" else "0",
+            if (policy.autoUnstopEnabled) "1" else "0",
             if (policy.autostartManaged) "1" else "0",
             if (policy.autostartEnabled) "1" else "0",
             if (policy.dozeManaged) "1" else "0",
@@ -209,22 +222,25 @@ class GuardSettingsStore(context: Context) {
 
         internal fun decodeAppPolicy(encoded: String): AppPolicy? {
             val fields = encoded.split('|')
-            if (fields.size != 8 || !PACKAGE_NAME.matches(fields[0])) return null
+            if ((fields.size != 8 && fields.size != 9) || !PACKAGE_NAME.matches(fields[0])) return null
             val appEnabled = fields[1]
             val aurogonEnabled = fields[2]
-            val autostartManaged = fields[3]
-            val autostartEnabled = fields[4]
-            val dozeManaged = fields[5]
-            val periodic = fields[7]
-            if (listOf(appEnabled, aurogonEnabled, autostartManaged, autostartEnabled, dozeManaged, periodic).any { it !in setOf("0", "1") }) return null
+            val autoUnstopEnabled = if (fields.size == 9) fields[3] else appEnabled
+            val autostartManaged = fields[if (fields.size == 9) 4 else 3]
+            val autostartEnabled = fields[if (fields.size == 9) 5 else 4]
+            val dozeManaged = fields[if (fields.size == 9) 6 else 5]
+            val dozePolicy = fields[if (fields.size == 9) 7 else 6]
+            val periodic = fields[if (fields.size == 9) 8 else 7]
+            if (listOf(appEnabled, aurogonEnabled, autoUnstopEnabled, autostartManaged, autostartEnabled, dozeManaged, periodic).any { it !in setOf("0", "1") }) return null
             return AppPolicy(
                 packageName = fields[0],
                 appEnabled = appEnabled == "1",
                 aurogonEnabled = aurogonEnabled == "1",
+                autoUnstopEnabled = autoUnstopEnabled == "1",
                 autostartManaged = autostartManaged == "1",
                 autostartEnabled = autostartEnabled == "1",
                 dozeManaged = dozeManaged == "1",
-                dozePolicy = AppDozePolicy.fromPersistedValue(fields[6]),
+                dozePolicy = AppDozePolicy.fromPersistedValue(dozePolicy),
                 periodicEnforcement = periodic == "1",
             )
         }

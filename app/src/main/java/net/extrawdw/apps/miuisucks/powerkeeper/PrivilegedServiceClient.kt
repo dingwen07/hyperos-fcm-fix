@@ -99,6 +99,19 @@ object PrivilegedServiceClient {
             )
         }
 
+    suspend fun unstop(
+        packageNames: Collection<String>,
+        targetUserIds: List<Int>,
+        trigger: String,
+    ): String =
+        withService("unstop", trigger) { connectedService ->
+            connectedService.unstop(
+                packageNames.distinct().sorted().toTypedArray(),
+                targetUserIds.distinct().sorted().toIntArray(),
+                trigger,
+            )
+        }
+
     suspend fun reconcileAurogon(
         aurogonPackages: Collection<String>,
         trigger: String,
@@ -219,5 +232,5 @@ object PrivilegedServiceClient {
 
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService AIDL surface changes so Shizuku replaces stale processes.
-    private const val USER_SERVICE_VERSION = 12
+    private const val USER_SERVICE_VERSION = 13
 }

@@ -53,6 +53,7 @@ fun AppManagementScreen(
     modifier: Modifier = Modifier,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
@@ -117,6 +118,7 @@ fun AppManagementScreen(
             policy = policies.policyFor(app.packageName),
             onDismiss = { configFor = null },
             onAurogonChanged = onAurogonChanged,
+            onAutoUnstopChanged = onAutoUnstopChanged,
             onAutostartManagedChanged = onAutostartManagedChanged,
             onAutostartChanged = onAutostartChanged,
             onPeriodicChanged = onPeriodicChanged,
@@ -195,6 +197,7 @@ private fun AppPolicySheet(
     policy: AppPolicy,
     onDismiss: () -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
+    onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
     onPeriodicChanged: (String, Boolean) -> Unit,
@@ -217,6 +220,12 @@ private fun AppPolicySheet(
                 description = stringResource(R.string.aurogon_protection_description),
                 checked = policy.aurogonEnabled,
                 onCheckedChange = { onAurogonChanged(app.packageName, it) },
+            )
+            PolicySwitchRow(
+                title = stringResource(R.string.auto_unstop),
+                description = stringResource(R.string.auto_unstop_description),
+                checked = policy.autoUnstopEnabled,
+                onCheckedChange = { onAutoUnstopChanged(app.packageName, it) },
             )
             PolicySwitchRow(
                 title = stringResource(R.string.miui_autostart),

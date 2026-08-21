@@ -91,6 +91,55 @@ class EnforcementScriptTest {
     }
 
     @Test
+    fun unsupportedAutostartSwitchOpSkipsPolicyAndSelfProtectionWrites() {
+        val script = EnforcementScript.build(
+            listOf(autoUnrestrictedPolicy),
+            applicationId,
+            includeAutostartSwitchOp = false,
+        )
+
+        assertTrue(script.contains("'$autoUnrestrictedPackage' '10008' 'allow'"))
+        assertFalse(script.contains("'$autoUnrestrictedPackage' '10053' 'allow'"))
+        assertTrue(script.contains("cmd appops set --user 0 '$applicationId' '10008' allow"))
+        assertFalse(script.contains("'$applicationId' '10053'"))
+    }
+
+    @Test
+    fun unsupportedAutostartSwitchOpStillWritesDisableIgnoring() {
+        val policy = AppPolicy("com.example.push", autostartManaged = true)
+        val script = EnforcementScript.build(
+            listOf(policy),
+            applicationId,
+            includeAutostartSwitchOp = false,
+        )
+
+        assertTrue(script.contains("'com.example.push' '10008' 'ignore'"))
+        assertFalse(script.contains("'com.example.push' '10053' 'ignore'"))
+    }
+
+    @Test
+    fun unsupportedAutostartSwitchOpAppliedInResolvedBatches() {
+        val policy = AppPolicy(
+            "com.example.push",
+            autostartManaged = true,
+            autostartEnabled = true,
+        )
+        val script = EnforcementScript.build(
+            policies = listOf(policy),
+            applicationId = applicationId,
+            targetUsers = listOf(0, 999),
+            installedPackagesByUser = mapOf(
+                0 to setOf(policy.packageName),
+                999 to emptySet(),
+            ),
+            includeAutostartSwitchOp = false,
+        )
+
+        assertTrue(script.contains("--user \"0\" '${policy.packageName}' '10008' 'allow'"))
+        assertFalse(script.contains("'${policy.packageName}' '10053'"))
+    }
+
+    @Test
     fun selfProtectionEnablesBothXiaomiAutostartAppOpsForOwner() {
         val script = EnforcementScript.build(listOf(autoUnrestrictedPolicy), applicationId)
 

@@ -30,16 +30,28 @@ class FcmRecoveryWorker(
             return Result.success()
         }
 
-        val settings = GuardSettingsStore(applicationContext).loadSettings()
+        val settingsStore = GuardSettingsStore(applicationContext)
+        val settings = settingsStore.loadSettings()
+        val targetUserIds = settingsStore.loadEnabledAndroidUserIds()
         return runCatching {
-            PrivilegedServiceClient.startFcmProtection(
+            val fcmReport = PrivilegedServiceClient.startFcmProtection(
                 settings.aurogonEnabledPackages,
                 "background:fcm-recovery",
             )
+            val unstopReport = if (settings.autoUnstopPackages.isEmpty()) {
+                "Auto unstop: no packages selected"
+            } else {
+                PrivilegedServiceClient.unstop(
+                    settings.autoUnstopPackages,
+                    targetUserIds,
+                    "background:auto-unstop",
+                )
+            }
+            "$fcmReport\n$unstopReport"
         }
             .fold(
                 onSuccess = { report ->
-                    val failed = report.contains("FAILED")
+                    val failed = report.contains("FAILED") || report.contains("exit_code=")
                     AppLog.i("Worker/FCM", "finish failed=$failed report=$report")
                     if (failed) Result.retry() else Result.success()
                 },

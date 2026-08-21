@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HyperOS FCM 修復</string>
+    <string name="app_subtitle">HyperOS 背景控制</string>
+
+    <string name="unsupported_device">不支援的裝置</string>
+    <string name="unsupported_device_description">此應用程式需要在執行 HyperOS 的 Xiaomi 裝置上，以裝置擁有者使用者身分執行。</string>
+    <string name="checking_device_compatibility">正在檢查裝置相容性…</string>
+
+    <string name="shizuku">Shizuku</string>
+    <string name="shizuku_checking">檢查中…</string>
+    <string name="shizuku_not_running">未執行</string>
+    <string name="shizuku_permission_required">需要權限</string>
+    <string name="shizuku_connected">已連線</string>
+    <string name="shizuku_description">Shizuku 讓此應用程式無需 root 即可管理 HyperOS 電池設定。</string>
+    <string name="grant_access">授予存取權</string>
+    <string name="open_shizuku">開啟 Shizuku</string>
+    <string name="manage">管理</string>
+
+    <string name="automatic_protection">自動保護</string>
+    <string name="protection_summary">Google Play 服務已受到保護。Aurogon：%1$d 個應用程式 · 自動解除停止：%2$d 個應用程式 · 自動啟動：%3$d 個應用程式 · 週期性 AppOps：%4$d 個應用程式。</string>
+    <string name="applying">套用中…</string>
+    <string name="apply_now">立即套用</string>
+
+    <string name="android_profiles">Android 使用者</string>
+    <string name="android_profiles_description">選擇要套用各應用程式 HyperOS 自動啟動與 AOSP 電池最佳化變更的使用者。裝置擁有者與 XSpace 使用者預設為啟用。</string>
+    <string name="android_profiles_empty">尚未儲存使用者。連線至 Shizuku 後會載入使用者。</string>
+    <string name="android_user_id">使用者 %1$d</string>
+    <string name="refreshing">重新整理中…</string>
+    <string name="refresh_profiles">重新整理使用者</string>
+
+    <string name="apps_title">應用程式</string>
+    <string name="home">首頁</string>
+    <string name="apps_search_hint">搜尋應用程式</string>
+    <string name="apps_empty">找不到已安裝且支援 FCM 的應用程式。</string>
+    <string name="apps_no_match">沒有符合「%1$s」的應用程式。</string>
+    <string name="apps_section_enabled">受保護</string>
+    <string name="apps_section_all">所有應用程式</string>
+    <string name="app_not_installed">未安裝 · %1$s</string>
+
+    <string name="aurogon_protection">Aurogon FCM 保護</string>
+    <string name="aurogon_protection_description">當 HyperOS 準備快取此應用程式已凍結的 FCM 廣播時，喚醒此應用程式。</string>
+    <string name="auto_unstop">自動解除停止</string>
+    <string name="auto_unstop_description">定期清除這個 FCM 應用程式的 FLAG_STOPPED，但不會啟動應用程式。此功能獨立於「週期性套用」執行。</string>
+    <string name="miui_autostart">HyperOS 自動啟動</string>
+    <string name="miui_autostart_description">管理 Xiaomi 的兩個自動啟動 AppOps。關閉時不變更自動啟動設定。</string>
+    <string name="policy_enabled">啟用</string>
+    <string name="policy_disabled">停用</string>
+    <string name="periodic_enforcement">週期性套用</string>
+    <string name="periodic_enforcement_description">只有在自動啟動與 AOSP 電池最佳化的管理開關啟用時，才會週期性還原此應用程式的相關設定。Aurogon 與自動解除停止會獨立執行。</string>
+    <string name="aosp_doze_policy">AOSP 電池最佳化</string>
+    <string name="aosp_doze_policy_description">針對選取的 Android 使用者管理此設定。關閉時保持不變。</string>
+    <string name="app_doze_unrestricted">不受限制</string>
+    <string name="app_doze_unrestricted_description">允許背景執行，並將應用程式加入 Android 的不受限制清單。</string>
+    <string name="app_doze_default">最佳化</string>
+    <string name="app_doze_default_description">允許正常背景執行，但不將應用程式保留在 Android 的不受限制清單中。</string>
+    <string name="app_doze_restricted">受限制</string>
+    <string name="app_doze_restricted_description">限制背景 AppOps。通知與背景工作可能會延遲。</string>
+
+    <string name="google_play_services">Google Play 服務</string>
+    <string name="gms_status_not_checked">尚未檢查狀態</string>
+    <string name="gms_status_unavailable">無法取得狀態</string>
+    <string name="gms_status_protected">保護作用中</string>
+    <string name="gms_status_needs_attention">需要注意</string>
+    <string name="millet_no_restrict_description">應免受 HyperOS 限制的套件。</string>
+    <string name="millet_no_restrict_empty">清單中沒有套件。</string>
+    <string name="checking">檢查中…</string>
+    <string name="refresh_status">重新整理狀態</string>
+    <string name="fcm_diagnostics" translatable="false">FCM Diagnostics</string>
+    <string name="fcm_diagnostics_unavailable_message">此版本的 Google Play 服務不提供 FCM Diagnostics 頁面。</string>
+
+    <string name="check_frequency">週期性套用頻率</string>
+    <string name="check_frequency_description">已啟用週期性套用的應用程式會依此頻率，只還原其受管理的 HyperOS 自動啟動與 AOSP 電池最佳化設定。關閉會停用這項應用程式層級工作；獨立的 15 分鐘 Aurogon、自動解除停止與 GMS 復原工作仍會排程執行。</string>
+    <string name="off">關閉</string>
+    <string name="interval_minutes">%1$d 分鐘</string>
+    <string name="interval_one_hour">1 小時</string>
+    <plurals name="interval_hours">
+        <item quantity="one">%1$d 小時</item>
+        <item quantity="other">%1$d 小時</item>
+    </plurals>
+
+    <string name="last_check">上次檢查</string>
+    <string name="last_check_successful">成功 · %1$s</string>
+    <string name="last_check_attention">需要注意 · %1$s</string>
+    <string name="hide_details">隱藏詳細資料</string>
+    <string name="view_technical_details">檢視技術詳細資料</string>
+
+    <string name="diagnostics">診斷</string>
+    <string name="diagnostics_description">用於疑難排解與支援的技術記錄。</string>
+    <string name="open_diagnostics">開啟診斷</string>
+    <string name="back">返回</string>
+    <string name="refresh">重新整理</string>
+    <string name="clear">清除</string>
+    <string name="diagnostics_sessions_description">最新的工作階段會顯示在前面。大型工作階段只會顯示最後 200 KB。</string>
+    <string name="no_diagnostic_sessions">找不到診斷工作階段。</string>
+    <string name="empty_log">（空白工作階段）</string>
+    <string name="clear_diagnostics_title">清除診斷？</string>
+    <string name="clear_diagnostics_description">所有已儲存的診斷工作階段都會刪除，並立即開始新的空白工作階段。</string>
+    <string name="clearing">清除中…</string>
+    <string name="cancel">取消</string>
+
+    <string name="shizuku_stopped_message">Shizuku 已停止。自動保護已暫停。</string>
+    <string name="shizuku_access_granted_message">已授予 Shizuku 存取權。正在套用設定…</string>
+    <string name="shizuku_access_denied_message">Shizuku 存取權遭拒。</string>
+    <string name="start_shizuku_message">請啟動 Shizuku，然後返回此處。</string>
+    <string name="shizuku_access_already_granted_message">已授予 Shizuku 存取權。</string>
+    <string name="shizuku_access_denied_previously_message">先前已拒絕授權。請在 Shizuku 中重新啟用此應用程式。</string>
+    <string name="shizuku_request_failed_message">無法要求 Shizuku 存取權：%1$s</string>
+    <string name="shizuku_not_installed_message">尚未安裝 Shizuku。</string>
+    <string name="shizuku_service_timeout_message">Shizuku 使用者服務連線逾時。請重新啟動 Shizuku 後再試一次。</string>
+    <string name="app_setting_changed_message">%1$s 設定已變更。正在套用一次…</string>
+    <string name="app_setting_saved_message">%1$s 設定已儲存。</string>
+    <string name="app_setting_applied_message">%1$s 設定已套用。</string>
+    <string name="app_setting_failed_message">無法套用 %1$s 設定：%2$s</string>
+    <string name="frequency_changed_message">檢查頻率已變更為 %1$s。</string>
+    <string name="applying_settings_message">正在套用設定…</string>
+    <string name="applying_progress">正在套用 %1$d / %2$d</string>
+    <string name="settings_applied_message">設定已套用。</string>
+    <string name="settings_partially_applied_message">部分設定需要注意。請查看上次檢查或診斷以取得詳細資料。</string>
+    <string name="settings_failed_message">無法套用設定：%1$s</string>
+    <string name="no_android_profiles_error">系統未傳回任何 Android 使用者。</string>
+    <plurals name="android_profiles_found_message">
+        <item quantity="one">找到 %1$d 位 Android 使用者。</item>
+        <item quantity="other">找到 %1$d 位 Android 使用者。</item>
+    </plurals>
+    <string name="android_profiles_refresh_failed_message">無法重新整理 Android 使用者：%1$s</string>
+    <string name="android_profile_enabled_message">已為 %1$s 啟用應用程式政策。</string>
+    <string name="android_profile_disabled_message">已為 %1$s 停用應用程式政策。</string>
+    <string name="android_user_fallback">使用者 %1$d</string>
+    <string name="protection_status_failed_message">無法檢查保護狀態：%1$s</string>
+    <string name="unknown_error">未知錯誤</string>
+</resources>

@@ -4,6 +4,8 @@
 
 HyperOS FCM Fix 用于解决小米 HyperOS 冻结 Google Play 服务或限制应用后台运行所导致的 Firebase Cloud Messaging (FCM) 通知延迟问题。它使用 Shizuku 提供的 ADB shell 身份，无需 Root。
 
+[<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="通过 Obtainium 获取" height="80">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22net.extrawdw.apps.miuisucks.powerkeeper%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdingwen07%2Fhyperos-fcm-fix%22%2C%22author%22%3A%22dingwen07%22%2C%22name%22%3A%22HyperOS%20FCM%20Fix%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
+
 ## 功能简介
 
 - 保护 Google Play 服务 (`com.google.android.gms`)，使其免受已知会中断 FCM 连接的 HyperOS 和 Greezer 限制。

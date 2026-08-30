@@ -231,6 +231,7 @@ object PrivilegedServiceClient {
     }
 
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
-    // Increment whenever the UserService AIDL surface changes so Shizuku replaces stale processes.
-    private const val USER_SERVICE_VERSION = 13
+    // Increment whenever the UserService implementation or AIDL changes so Shizuku replaces the
+    // daemon process instead of retaining code loaded from an older APK.
+    private const val USER_SERVICE_VERSION = 14
 }

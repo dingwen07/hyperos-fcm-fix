@@ -41,7 +41,7 @@ HyperOS FCM Fix 用于解决小米 HyperOS 冻结 Google Play 服务或限制应
 
 ## FCM 保护
 
-这个持久的应用包级修复会读取当前的 `MILLET_NO_RESTRICT_APP` 值，仅在缺少 `com.google.android.gms` 时追加该应用包，写回保留了原有内容的列表，并验证结果。设备处于活动状态时，长期运行的 Shizuku UserService 每两秒检查一次此设置和由本应用管理的 Aurogon 规则，在已知的延迟冻结路径通常开始运行前修复 PowerKeeper 的覆盖操作。Java 定时器无法唤醒已挂起的设备；不过，PowerKeeper 通常会在用户与其界面交互时重写此设置。
+这个持久的应用包级修复会读取当前的 `MILLET_NO_RESTRICT_APP` 值，仅在缺少 `com.google.android.gms` 时追加该应用包，写回保留了原有内容的列表，并验证结果。设备处于活动状态时，长期运行的 Shizuku UserService 每 2.5 秒检查一次此设置，在已知的延迟冻结路径通常开始运行前修复 PowerKeeper 的覆盖操作。Aurogon 规则会在保护或配置操作期间立即协调，并由现有的 15 分钟恢复任务兜底。Java 定时器无法唤醒已挂起的设备；不过，PowerKeeper 通常会在用户与其界面交互时重写此设置。
 
 服务启动时还会运行以下纵深防御命令：
 
@@ -84,7 +84,7 @@ Android 的 device-idle 允许列表以应用 ID 为全局范围。因此，“�
 
 ## 技术调查
 
-FCM 保护设计所依据的脱敏设备与框架调查记录位于 [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)。
+FCM 保护设计所依据的脱敏设备与框架调查记录位于 [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)。另有一份专题报告说明 [PowerKeeper 何时重写 `MILLET_NO_RESTRICT_APP`，以及为什么需要及时的监控循环](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)。
 
 ## 构建
 

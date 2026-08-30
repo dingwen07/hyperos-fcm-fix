@@ -24,7 +24,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     }
     private val fcmRepairLock = Any()
     private val aurogonRepairLock = Any()
-    private var desiredAurogon: Set<String> = emptySet()
     private var autostartSwitchOpAvailable: Boolean? = null
     private var fcmPolling: ScheduledFuture<*>? = null
     private val serviceLogLock = Any()
@@ -220,8 +219,12 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         aurogonPackages: Array<out String>,
         trigger: String,
     ): String {
-        val desired = updateDesiredAurogon(aurogonPackages)
-        serviceLog('I', "FCM", "start trigger=$trigger aurogon=${desired.size} pollActive=${isFcmPollingActive()}")
+        val desired = aurogonPackages.toSet()
+        serviceLog(
+            'I',
+            "FCM",
+            "start trigger=$trigger aurogon=${desired.size} pollActive=${isFcmPollingActive()}",
+        )
         startFcmPolling()
 
         val report = buildString {
@@ -230,7 +233,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             appendLine(runGreezerCommand("Restore ordinary GMS allowlist", "LM", "add", MilletNoRestrictList.GMS_PACKAGE))
             appendLine(ensureGmsNoRestrict())
             appendLine(ensureAurogon(desired))
-            append("FCM setting monitor: active (${FCM_POLL_SECONDS}s Shizuku poll)")
+            append("FCM setting monitor: active ($FCM_POLL_INTERVAL_LABEL Shizuku poll)")
         }
         serviceLog('I', "FCM", "finish trigger=$trigger report=${report.singleLine(2_000)}")
         return report
@@ -262,7 +265,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         aurogonPackages: Array<out String>,
         trigger: String,
     ): String {
-        val desired = updateDesiredAurogon(aurogonPackages)
+        val desired = aurogonPackages.toSet()
         startFcmPolling()
         val report = ensureAurogon(desired)
         serviceLog(
@@ -309,14 +312,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                 "finish trigger=$trigger report=${report.singleLine(2_000)}",
             )
         }
-    }
-
-    private fun updateDesiredAurogon(aurogonPackages: Array<out String>): Set<String> {
-        val desired = aurogonPackages.toSet()
-        synchronized(aurogonRepairLock) {
-            desiredAurogon = desired
-        }
-        return desired
     }
 
     /**
@@ -393,20 +388,14 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             fcmPolling = fcmExecutor.scheduleWithFixedDelay(
                 {
                     runCatching { ensureGmsNoRestrict() }
-                        .onSuccess { result -> logRepairResult("poll", result) }
+                        .onSuccess { result -> logMilletRepairResult(result) }
                         .onFailure { error ->
-                            serviceLog('E', "FCM", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
-                        }
-                    val desired = synchronized(aurogonRepairLock) { desiredAurogon }
-                    runCatching { ensureAurogon(desired) }
-                        .onSuccess { result -> logRepairResult("aurogon-poll", result) }
-                        .onFailure { error ->
-                            serviceLog('E', "Aurogon", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
+                            serviceLog('E', "MILLET", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
                         }
                 },
-                FCM_POLL_SECONDS,
-                FCM_POLL_SECONDS,
-                TimeUnit.SECONDS,
+                FCM_POLL_INTERVAL_MILLIS,
+                FCM_POLL_INTERVAL_MILLIS,
+                TimeUnit.MILLISECONDS,
             )
         }
     }
@@ -414,13 +403,13 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private fun isFcmPollingActive(): Boolean =
         fcmPolling?.let { !it.isCancelled && !it.isDone } == true
 
-    private fun logRepairResult(reason: String, result: String) {
+    private fun logMilletRepairResult(result: String) {
         if (result.contains("FAILED")) {
-            Log.w(TAG, "FCM repair ($reason): $result")
-            serviceLog('E', "FCM", "repair reason=$reason result=${result.singleLine(2_000)}")
-        } else if (result.contains("appended GMS") || result.contains("updated managed rules")) {
-            Log.i(TAG, "FCM repair ($reason): $result")
-            serviceLog('I', "FCM", "repair reason=$reason result=${result.singleLine(2_000)}")
+            Log.w(TAG, "MILLET repair (poll): $result")
+            serviceLog('E', "MILLET", "repair reason=poll result=${result.singleLine(2_000)}")
+        } else if (result.contains("appended GMS")) {
+            Log.i(TAG, "MILLET repair (poll): $result")
+            serviceLog('I', "MILLET", "repair reason=poll result=${result.singleLine(2_000)}")
         }
     }
 
@@ -731,7 +720,12 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val SETTINGS_COMMAND_TIMEOUT_SECONDS = 10L
         private const val GREEZER_COMMAND_TIMEOUT_SECONDS = 20L
         private const val USER_LIST_COMMAND_TIMEOUT_SECONDS = 10L
-        private const val FCM_POLL_SECONDS = 2L
+        // PowerKeeper can regenerate this setting from several asynchronous policy paths. Greezer's
+        // shortest observed delayed-freeze path is 5 seconds, so a 2.5-second watchdog retains a
+        // nominal 2.5-second response margin. This scheduled task has no wake lock and therefore
+        // does not wake a suspended device.
+        private const val FCM_POLL_INTERVAL_MILLIS = 2_500L
+        private const val FCM_POLL_INTERVAL_LABEL = "2.5s"
         private const val MAX_OUTPUT_LENGTH = 64_000
         private const val MAX_PACKAGE_LIST_OUTPUT_LENGTH = 512_000
         private const val MAX_PENDING_LOG_CHARS = 128_000

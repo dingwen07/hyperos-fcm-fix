@@ -41,7 +41,7 @@ Using Shizuku's ADB shell identity, the app can:
 
 ## FCM protection
 
-The durable, package-specific fix reads the current `MILLET_NO_RESTRICT_APP` value, appends `com.google.android.gms` only when it is absent, writes the preserved list, and verifies the result. A long-running Shizuku UserService checks that setting and the app-managed Aurogon rules every two seconds while the device is active, repairing PowerKeeper overwrites before the identified delayed-freeze paths normally run. Java timers cannot wake a suspended device; however, PowerKeeper typically rewrites the setting while the user is already interacting with its UI.
+The durable, package-specific fix reads the current `MILLET_NO_RESTRICT_APP` value, appends `com.google.android.gms` only when it is absent, writes the preserved list, and verifies the result. A long-running Shizuku UserService checks that setting every 2.5 seconds while the device is active, repairing PowerKeeper overwrites before the identified delayed-freeze paths normally run. Aurogon rules are reconciled immediately during protection/configuration operations, with the existing 15-minute recovery work as a safety net. Java timers cannot wake a suspended device; however, PowerKeeper typically rewrites the setting while the user is already interacting with its UI.
 
 At startup, the service also runs these defense-in-depth commands:
 
@@ -84,7 +84,7 @@ Android's device-idle allowlist is global per application ID. Unrestricted and O
 
 ## Technical investigation
 
-The sanitized device and framework investigation behind the FCM protection design is documented in [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md).
+The sanitized device and framework investigation behind the FCM protection design is documented in [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md). A focused report explains [when PowerKeeper rewrites `MILLET_NO_RESTRICT_APP` and why it needs a prompt watchdog](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md).
 
 ## Build
 

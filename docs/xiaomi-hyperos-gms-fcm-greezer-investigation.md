@@ -182,11 +182,6 @@ Relevant source:
 - `work/powerkeeper/<device-a>/jadx/sources/com/miui/powerkeeper/provider/PowerSaveConfigureManager.java`
 - `work/powerkeeper/<device-a>/jadx/sources/com/miui/powerkeeper/provider/UserConfigure.java`
 
-The supplied `Xiaomi_AppOps_and_PowerKeeper_Report.md` was directionally
-correct on this point: this selector is a PowerKeeper policy, not the standard
-`RUN_IN_BACKGROUND`/`RUN_ANY_IN_BACKGROUND` AppOps and not Xiaomi auto-start
-AppOp 10008.
-
 ### One database choice fans out to many controllers
 
 The one `bgControl` value is compiled into a `PowerKeeperAppConfigure`
@@ -958,10 +953,16 @@ Run that operation:
 
 - When the app obtains/reobtains Shizuku access.
 - After boot once Shizuku is available.
-- Whenever the `MILLET_NO_RESTRICT_APP` settings URI changes.
+- Continuously through a prompt idempotent watchdog while the Shizuku
+  UserService is runnable.
 - After the user changes any Xiaomi app background policy.
 
-The observer must avoid a write loop: compare normalized membership first and write only when GMS is absent.
+The watchdog must avoid unnecessary writes: compare normalized membership
+first and write only when GMS is absent. A normal application-process Settings
+observer is not a durable replacement when Xiaomi can kill that process, while
+Shizuku's shell UserService cannot rely on ordinary application-context APIs.
+The rewrite triggers and watchdog tradeoff are documented separately in the
+[focused `MILLET_NO_RESTRICT_APP` investigation](xiaomi-millet-no-restrict-app-rewrite-investigation.md).
 
 The repair should be prompt. If GMS freezes during the interval in which the entry is absent, restoring the list prevents later policy decisions but does not thaw the existing freeze. The tested shell/AOSP unfreeze route was ineffective against Greezer, so the app should report that condition and let the user wake/unlock the device rather than automating UI interaction.
 

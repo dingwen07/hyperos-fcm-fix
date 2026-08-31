@@ -2,92 +2,73 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-HyperOS FCM Fix 用于解决小米 HyperOS 冻结 Google Play 服务或限制应用后台运行所导致的 Firebase Cloud Messaging (FCM) 通知延迟问题。它使用 Shizuku 提供的 ADB shell 身份，无需 Root。
+HyperOS FCM Fix 用于防止小米 HyperOS 冻结 Google Play 服务，或过度限制需要及时接收 Firebase Cloud Messaging (FCM) 通知的应用。它使用 Shizuku 提供的 ADB shell 身份，无需 Root。
+
+[![GitHub Release](https://img.shields.io/github/v/release/dingwen07/hyperos-fcm-fix?include_prereleases=true&label=GitHub%20Release&logo=github)](https://github.com/dingwen07/hyperos-fcm-fix/releases)
 
 [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="通过 Obtainium 获取" height="80">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22net.extrawdw.apps.miuisucks.powerkeeper%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdingwen07%2Fhyperos-fcm-fix%22%2C%22author%22%3A%22dingwen07%22%2C%22name%22%3A%22HyperOS%20FCM%20Fix%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
 
-## 功能简介
+## 主要功能
 
-- 保护 Google Play 服务 (`com.google.android.gms`)，使其免受已知会中断 FCM 连接的 HyperOS 和 Greezer 限制。
-- 查找已安装且接收 FCM 消息的第三方应用，让用户选择需要保护的应用。
-- 分别提供 Aurogon FCM 保护、自动解除停止、HyperOS 自启动和 AOSP 电池优化控制。
-- 在 Shizuku 可用时监控相关 HyperOS 设置，并修复 PowerKeeper 所做的更改。
-- 在设备重启、应用更新或 Shizuku 重启后通过恢复任务重新应用保护。
+- 将 Google Play 服务 (`com.google.android.gms`) 保留在 HyperOS 的隐藏无限制列表 (`MILLET_NO_RESTRICT_APP`) 中，并在 PowerKeeper 重写该列表后修复此条目。
+- 停用已知的 Greezer GMS 限制器，并将 GMS 恢复到正常的运行时允许列表。
+- 提供可选的 FCM 连接保护，用于 CN Google Play 服务可能不积极重试连接的情况。
+- 无需请求 `QUERY_ALL_PACKAGES` 权限即可查找已安装的第三方 FCM 应用。
+- 为每个已启用应用分别提供 Aurogon FCM 保护、自动解除停止、HyperOS 自启动和 AOSP 电池优化控制。
+- 在设备重启、应用更新或 Shizuku 重启后恢复保护，并保留用于故障排查的诊断记录。
 
-## 使用方法
+## 要求与设置
 
-1. 从 [GitHub Releases](https://github.com/RikkaApps/Shizuku/releases) 安装 Shizuku，然后通过无线调试、ADB 或 Sui 启动。Play 商店上的 Shizuku 版本在 Android 16 QPR2 上可能有兼容性问题。
+本应用仅在小米 HyperOS 设备的机主用户中运行。应用清单依赖小米的 `com.miui.system` 共享库，因此不受支持的设备无法安装。本应用不会修改 PowerKeeper、清除应用数据或使用 Root。
+
+1. 从 [GitHub Releases](https://github.com/RikkaApps/Shizuku/releases) 安装 Shizuku，然后通过无线调试、ADB 或 Sui 启动。Play 商店版 Shizuku 在 Android 16 QPR2 上可能存在兼容性问题。
 2. 安装并打开 HyperOS FCM Fix，然后授予 Shizuku 权限。
-3. 确认 Google Play 服务显示 **保护已启用**。GMS 会受到自动保护，无需在应用列表中选择。
-4. 仅启用需要及时接收通知的应用。查看每个应用的 Aurogon、自动解除停止、自启动和电池设置；默认值适合作为起点。
+3. 确认 Google Play 服务显示 **保护已启用**。GMS 会受到自动保护，无需在应用列表中另行启用。
+4. 仅启用需要及时接收通知的应用，然后检查其 Aurogon、自动解除停止、自启动和电池设置。
 5. 更改多项设置后或进行故障排查时，使用 **立即应用**。设备重启后，请重新启动 Shizuku 并返回本应用，确认保护已恢复。
+
+> [!NOTE]
+> 如要停止使用 HyperOS FCM Fix，请先在应用及其自启动管理开关仍处于启用状态时，将每个受管理应用的 **HyperOS 自启动**设为希望保留的状态。然后停用所有受管理应用，重启设备后再卸载。停用应用会移除其 Aurogon 和自动解除停止规则，并将受管理的电池优化恢复为 **优化**；其余临时系统更改会在重启后复原。HyperOS 自启动是例外，会保留最后应用的状态。
 
 > [!TIP]
 > 建议先将 AOSP 电池优化设为 **优化**。仅当某个应用的通知仍然延迟时才使用 **无限制**，因为允许更多后台活动可能会增加耗电量。
 
-## 技术概览
+## 保护行为
 
-本应用使用 Shizuku 提供的 ADB shell 身份执行以下操作：
+### Google Play 服务
 
-- 在不删除现有条目的情况下，确保 `com.google.android.gms` 保留在 `Settings.System.MILLET_NO_RESTRICT_APP` 中；
-- 停用 Greezer 中易失的显式 GMS 限制器，并将 GMS 恢复到常规的运行时允许列表；
-- 当 PowerKeeper 重新生成设置时，及时恢复隐藏的无限制条目；
-- 无需请求 `QUERY_ALL_PACKAGES` 权限即可发现已安装且能够接收 FCM 的第三方应用；
-- 维护由用户选择的 Aurogon FCM 允许列表和 HyperOS 自启动策略；
-- 为所选 Android 用户按应用设置 AOSP 电池优化策略，包括无限制、优化、受限制或不更改；
-- 为每个已启用应用定期恢复其已管理的 AppOps 和电池策略；
-- 定期清除所选 FCM 应用的 `FLAG_STOPPED`，且不启动这些应用；
-- 保护应用自身的后备监控程序免受 HyperOS 后台限制。
+核心修复会保留 `Settings.System.MILLET_NO_RESTRICT_APP` 中的所有现有条目，仅在缺少 `com.google.android.gms` 时将其追加到列表。Shizuku UserService 默认每 30 秒检查一次，也可选择 60 秒或 120 秒。
 
-## FCM 保护
+UserService 不持有唤醒锁。设备进入 Doze 且进程被挂起时，轮询会暂停，并在进程再次获得运行机会后继续，因此无法保证严格按照所选间隔执行。固定的 15 分钟 WorkManager 恢复任务会在 Shizuku 可用时重新建立监控，并重新应用 GMS 和 Aurogon 保护；它也会执行自动解除停止。
 
-这个持久的应用包级修复会读取当前的 `MILLET_NO_RESTRICT_APP` 值，仅在缺少 `com.google.android.gms` 时追加该应用包，并保留其他条目。长期运行的 Shizuku UserService 在可以运行时默认每 30 秒检查一次；应用还提供 60 秒和 120 秒间隔。每次轮询结束时，默认开启的 **FCM 连接保护**会检查 IPv4 和 IPv6 套接字表中是否存在由 Google Play 服务持有且远程端口为 5228–5230 的已建立连接。匹配时会跳过普通的定向 `GCM_RECONNECT` 请求；不匹配时会刷新缓存的 GMS UID、将该 UID 记录到诊断信息并发送请求。探测不可用时会按需发送作为保底；即使套接字匹配，每 10 个可运行分钟也至少发送一次。用户可以关闭这些重新连接请求，而不影响 `MILLET_NO_RESTRICT_APP` 修复。正常的匹配轮询保持静默。循环始终完全在 UserService 内运行且不持有唤醒锁，因此 Java 定时器无法唤醒已挂起的设备，所选间隔在 Doze 期间并非墙上时钟保证。Aurogon 规则会在保护或配置操作期间立即协调，并由现有的 15 分钟恢复任务兜底。
+**FCM 连接保护**是一项独立的可选功能，用于 CN GMS 可能不积极重试连接的情况。它会检查 GMS 是否在 5228–5230 端口上存在已建立的 FCM 连接。未找到连接或无法检查时，应用会发送定向的 `com.google.android.intent.action.GCM_RECONNECT` 广播；服务实际运行时间每满 10 分钟也会至少发送一次。关闭此选项不会停用 `MILLET_NO_RESTRICT_APP` 修复。
 
-不匹配诊断信息还会包含当前配置的轮询间隔。
+### 受管理的应用
 
-服务启动时还会运行以下纵深防御命令：
+应用列表包含声明了 `com.google.android.c2dm.intent.RECEIVE` 接收器的非系统应用包。每个已启用应用有四项独立控制：
 
-```sh
-dumpsys greezer IM GMS disable
-dumpsys greezer LM add com.google.android.gms
-```
+- Aurogon FCM 保护：允许 FCM Intent 通过小米的广播控制并投递到应用，包括投递过程需要启动应用的情况。
+- 自动解除停止（Android 16+）：每 15 分钟清除一次 `FLAG_STOPPED`，使应用仍有资格由 FCM 启动；该操作本身不会启动应用。
+- HyperOS 自启动：在 FCM 投递目标没有运行中进程（例如进程已被杀死）时允许启动该进程。此时它会与 Aurogon 规则配合。本应用会管理小米的两个自启动 AppOp。
+- AOSP 电池优化：主要用于限制应用的后台活动，同时不影响 FCM。它会为所选 Android 用户应用无限制、优化或受限制策略。
 
-第一条命令会清除运行时的 `mGmsLimitEnabled` 标志。第二条命令会将 GMS 恢复到 Aurogon 的常规运行时允许列表。两条命令都不能替代 `MILLET_NO_RESTRICT_APP` 修复；后者还涵盖独立的 `PowerStrategyMode` 冻结路径。
+首次启用应用时，Aurogon、自动解除停止和自启动管理会一并开启。微信和 Telegram 默认启用，并将电池优化管理设为 **优化**；其他发现的应用默认停用，且不管理电池优化。
 
-WorkManager 提供恢复和引导后备机制。固定的 15 分钟恢复任务会在设备重启、应用更新或 Shizuku 重启后重新创建 Shizuku 监控，并为已启用且开启了“自动解除停止”的 FCM 应用清除 `FLAG_STOPPED`。另一个可配置任务会刷新 FCM 保护、每个已启用应用中受管理的自启动和 AOSP 电池优化策略，以及本应用自身的 HyperOS 后台权限。停用该任务不会停用专用的 FCM 恢复、“自动解除停止”或正在运行的 Shizuku 监控。WorkManager 的执行时间并不是应对 PowerKeeper 重写设置的主要机制。
+停用应用时，本应用会将其从受管理的 Aurogon 和自动解除停止列表中移除，同时保留已保存的选择。如果此前启用了电池优化管理，则会应用一次 **优化**；自启动状态不会改变。
 
-应用列表仅包含为 `com.google.android.c2dm.intent.RECEIVE` 公开了接收器的非系统应用包。系统应用和更新后的系统应用会被排除；以前保存过的应用包即使已卸载，仍会显示在列表中。
+**立即应用**会处理所有已启用应用。另一个 WorkManager 任务会按照 **定期执行频率**，自动为所有已启用应用重新应用受管理的自启动和电池策略。将其设为 **关闭** 只会停用这个定期执行任务，不会停止 GMS 保护、固定的 15 分钟 GMS 与 Aurogon 恢复任务或自动解除停止。
 
-启用应用会激活已保存的配置。首次启用应用时，会开启 Aurogon、“自动解除停止”以及两个小米自启动 AppOp 的管理。此后的启用和停用操作会保留 Aurogon、“自动解除停止”、自启动和电池选择。停用应用会将其从本应用的 Aurogon 和“自动解除停止”应用包集合中移除。如果此前开启了 AOSP 电池优化管理，停用应用时还会应用一次“优化”策略；否则，其电池状态保持不变。停用应用绝不会更改自启动设置。之后的启动、定期和手动完整执行都会排除该应用，直到它再次启用。Aurogon 和“自动解除停止”是两个独立设置：停用其中任意一项都不会停用应用或停止其他已配置策略。“自动解除停止”由独立、固定每 15 分钟运行的 FCM 恢复任务处理。
-
-对于 `HYPEROS_AUTO_UNRESTRICTED_PACKAGES` 中的应用包（目前为 `com.tencent.mm` 和 `org.telegram.messenger`），默认会启用应用、Aurogon 和“自动解除停止”，开启自启动管理并设为“启用”，开启电池管理并设为“优化”。其他应用包默认不启用应用，并关闭 Aurogon、“自动解除停止”、自启动管理和电池管理；其保留的选择器默认值分别为“停用”和“优化”。此应用包集合仅用于提供初始默认值。
-
-各项控件使用定向的 Shizuku 操作，因此更改一项设置不会运行完整的应用流程。明确点击 **立即应用** 会处理每个已启用应用，并对所选应用包执行“自动解除停止”。定期 WorkManager 和启动时的过期执行会处理每个已启用应用，同时遵循各应用的自启动和电池管理开关。全局定期执行频率（包括“关闭”）控制这些 AppOps 和电池策略执行；固定的 15 分钟 FCM 恢复任务则独立处理“自动解除停止”。
-
-自启动和 AOSP 电池优化各有一个独立的管理开关。关闭管理开关会阻止对相应设置进行 AppOps 更改，同时保留选定值，并隐藏其 Material 3 选择器。开启管理后，选择器会重新显示并应用保留的值。电池选择器依次为“无限制”“优化”“受限制”。
-
-批量应用设置时，只会各协调一次 GMS 和 Aurogon，为每个所选 Android 用户各获取一次已安装应用包快照，然后每个 Binder 命令批次最多处理 16 项应用策略。**立即应用**、定期 WorkManager 和启动时的过期执行都使用这条有界路径。中间批次会省略管理器自我保护和 `appops write-settings`；这些操作在每次批量执行中只运行一次。**立即应用** 按钮会接收各批次中每个应用的完成标记，并准确显示已完成数和总数。
+自启动和电池策略以本应用中选定的 Android 用户为目标；机主用户和手机分身用户默认选中。Android 的无限制 device-idle 允许列表以应用包为全局范围，因此“无限制”和“优化”的更改无法按用户隔离。
 
 ## 诊断
 
-应用内的诊断查看器会将 WorkManager 执行记录、Shizuku 连接事件、特权命令和 FCM 修复写入轮换的会话文件。界面操作不会被记录。打开主屏幕底部的 **诊断信息**，可以查看和选择文本、刷新活动会话或清除全部会话。Logcat 条目使用 `PowerKeeperFix` 前缀。应用最多保留 20 个会话，文件大小达到约 1 MB 时会轮换，并显示大型会话中最新的 200 KB 内容。
-
-## 仅限小米设备安装
-
-清单要求存在由小米固件提供、以 APK 为载体的 `com.miui.system` 共享库。缺少此库时，Android 软件包管理器会拒绝安装。运行时保护会在调度任务或调用 Shizuku 前，验证当前为 Android 机主用户 0、制造商为 `Xiaomi`、共享库存在，并且 `com.miui.system` 是系统应用包。次要用户和手机分身实例会保持不活动；机主用户实例仍可管理所选 Android 用户的按应用策略。
-
-本应用会为机主用户 0 启用两个小米自启动 AppOp：执行操作 `10008` 和安全中心开关状态操作 `10053`。自我保护还会允许小米的开机完成 (`10007`)、后台启动 Activity (`10021`) 和前台服务 (`10023`) 限制项。清单中的一个小型接收器只监听 `BOOT_COMPLETED` 和应用专属的 `MY_PACKAGE_REPLACED` 广播，随后恢复定期计划并立即尝试恢复。
-
-## 安全模型
-
-本应用不使用 Root、UID 级 AppOps、卸载操作、数据清除、界面自动化或破坏性文件系统操作，也不会修改 PowerKeeper 应用包。长期运行的 Shizuku UserService 只公开本应用所需的固定设置应用操作和 FCM 监控操作。在这个具有 shell 身份的服务内，Android 系统命令通过各系统服务的 Binder shell 或 dump 入口分发，而不是生成 `/system/bin` 子进程。
-
-Android 的 device-idle 允许列表以应用 ID 为全局范围。因此，“无限制”和“优化”的允许列表更改不区分用户；按用户设置的 AppOps 更改仅以本应用中启用的 Android 用户为目标。机主用户 (`0`) 和手机分身用户 (`999`) 默认启用，其他发现的用户默认停用。
+打开主屏幕底部的 **诊断信息**，可查看、刷新、复制或清除会话日志。日志涵盖 Shizuku 连接、后台任务、特权操作和 FCM 修复，文件保存在 `/storage/emulated/0/Android/data/net.extrawdw.apps.miuisucks.powerkeeper/files/logs/`。Logcat 条目使用 `PowerKeeperFix` 前缀。
 
 ## 技术调查
 
-FCM 保护设计所依据的脱敏设备与框架调查记录位于 [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)。另有一份专题报告说明 [PowerKeeper 何时重写 `MILLET_NO_RESTRICT_APP`，以及为什么需要及时的监控循环](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)。
+- [小米 HyperOS GMS、FCM 与 Greezer 调查](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)
+- [PowerKeeper 重写 `MILLET_NO_RESTRICT_APP` 的调查](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)
 
 ## 构建
 
-在 Android Studio 中打开项目并运行 `app` 配置。在目标小米设备上安装最新的 [Shizuku GitHub 版本](https://github.com/RikkaApps/Shizuku/releases)，并通过无线调试、ADB 或 Sui 启动。用户必须在 Shizuku 中授权 HyperOS FCM Fix。
+在 Android Studio 中打开项目并运行 `app` 配置。

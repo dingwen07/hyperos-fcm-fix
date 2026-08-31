@@ -2,92 +2,73 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-HyperOS FCM Fix helps restore timely Firebase Cloud Messaging (FCM) notifications on Xiaomi HyperOS devices that freeze Google Play services or restrict apps in the background. It uses Shizuku's ADB shell identity and does not require root.
+HyperOS FCM Fix prevents Xiaomi HyperOS from freezing Google Play services or over-restricting apps that need timely Firebase Cloud Messaging (FCM) notifications. It uses Shizuku's ADB shell identity and does not require root.
+
+[![GitHub release](https://img.shields.io/github/v/release/dingwen07/hyperos-fcm-fix?include_prereleases=true&label=GitHub%20Release&logo=github)](https://github.com/dingwen07/hyperos-fcm-fix/releases)
 
 [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22net.extrawdw.apps.miuisucks.powerkeeper%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdingwen07%2Fhyperos-fcm-fix%22%2C%22author%22%3A%22dingwen07%22%2C%22name%22%3A%22HyperOS%20FCM%20Fix%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
 
-## What it does
+## Features
 
-- Protects Google Play services (`com.google.android.gms`) from the HyperOS and Greezer restrictions known to break FCM connections.
-- Finds installed third-party apps that receive FCM messages and lets you choose which ones to protect.
-- Provides independent controls for Aurogon FCM protection, Auto unstop, HyperOS Autostart, and AOSP battery optimization.
-- Monitors the relevant HyperOS settings while Shizuku is available and repairs changes made by PowerKeeper.
-- Uses recovery jobs after reboots, app updates, or Shizuku restarts.
+- Keeps Google Play services (`com.google.android.gms`) in HyperOS's hidden no-restrictions list (`MILLET_NO_RESTRICT_APP`) and repairs the entry when PowerKeeper rewrites the list.
+- Disables the known Greezer GMS limiter and restores GMS to its normal runtime allowlist.
+- Offers optional FCM Connection Protection for CN Google Play services builds that may not reconnect promptly.
+- Finds installed third-party FCM apps without requesting `QUERY_ALL_PACKAGES`.
+- Provides separate Aurogon FCM protection, Auto unstop, HyperOS Autostart, and AOSP battery-optimization controls for each enabled app.
+- Restores protection after reboots, app updates, or Shizuku restarts, and keeps diagnostic records for troubleshooting.
 
-## How to use
+## Requirements and setup
 
-1. Install Shizuku from [GitHub Releases](https://github.com/RikkaApps/Shizuku/releases), then start it through wireless debugging, ADB, or Sui. Note: the Shizuku version on Play store may have compatibility issues on Android 16 QPR2.
+The app runs only in the owner profile on a Xiaomi device with HyperOS. Its manifest requires Xiaomi's `com.miui.system` shared library, so unsupported devices cannot install it. It does not modify PowerKeeper, clear app data, or use root.
+
+1. Install Shizuku from [GitHub Releases](https://github.com/RikkaApps/Shizuku/releases), then start it through wireless debugging, ADB, or Sui. The Play Store build of Shizuku may have compatibility issues on Android 16 QPR2.
 2. Install and open HyperOS FCM Fix, then grant its Shizuku permission.
-3. Confirm that Google Play services shows **Protection active**. GMS is protected automatically and does not need to be selected from the app list.
-4. Enable only the apps for which timely notifications matter. Review each app's Aurogon, Auto unstop, Autostart, and battery settings; the defaults are a good starting point.
-5. Use **Apply now** after changing several settings or when troubleshooting. After a reboot, restart Shizuku and return to the app to confirm that protection has resumed.
+3. Confirm that Google Play services shows **Protection active**. GMS is protected automatically and does not appear as an app you need to enable.
+4. Enable only the apps for which timely notifications matter, then review their Aurogon, Auto unstop, Autostart, and battery settings.
+5. Use **Apply now** after changing several settings or while troubleshooting. After a reboot, restart Shizuku and return to the app to confirm that protection has resumed.
+
+> [!NOTE]
+> To stop using HyperOS FCM Fix, first set each managed app's **HyperOS Autostart** to the state you want while the app and its Autostart management switch are still enabled. Then disable every managed app and reboot before uninstalling. Disabling an app removes its Aurogon and Auto unstop rules and returns managed battery optimization to **Optimized**; the remaining temporary system changes reset after reboot. HyperOS Autostart is the exception and keeps the last applied state.
 
 > [!TIP]
 > Start with AOSP battery optimization set to **Optimized**. Use **Unrestricted** only for an app whose notifications remain delayed, because allowing more background activity can increase battery use.
 
-## Technical overview
+## Protection behavior
 
-Using Shizuku's ADB shell identity, the app can:
+### Google Play services
 
-- keep `com.google.android.gms` in `Settings.System.MILLET_NO_RESTRICT_APP` without removing existing entries;
-- disable Greezer's volatile, explicit GMS limiter and restore GMS to its ordinary runtime allowlist;
-- promptly restore the hidden no-restrictions entry when PowerKeeper regenerates the setting;
-- discover installed third-party FCM receiver apps without requesting `QUERY_ALL_PACKAGES`;
-- maintain an app-selected Aurogon FCM allowlist and HyperOS Autostart policy;
-- apply per-app AOSP battery-optimization policies—Unrestricted, Optimized, Restricted, or Don't change—for selected Android users;
-- periodically restore managed AppOps and battery policies for every enabled app;
-- periodically clear `FLAG_STOPPED` for selected FCM apps without launching them; and
-- protect its own fallback watchdog from HyperOS background restrictions.
+The core fix preserves all existing entries in `Settings.System.MILLET_NO_RESTRICT_APP` and appends `com.google.android.gms` only when it is missing. A Shizuku UserService checks the setting every 30 seconds by default; 60- and 120-second intervals are also available.
 
-## FCM protection
+The UserService does not hold a wake lock. If Android suspends its process during Doze, polling pauses and resumes when the process can run again, so the selected interval is not exact. A fixed 15-minute WorkManager recovery job re-establishes the monitor and reapplies GMS and Aurogon protection when Shizuku is available; it also runs Auto unstop.
 
-The durable, package-specific fix reads the current `MILLET_NO_RESTRICT_APP` value and appends `com.google.android.gms` only when it is absent, preserving the other entries. A long-running Shizuku UserService performs this check every 30 seconds by default while it is runnable; the app also offers 60- and 120-second intervals. At the end of each poll, the default-on **FCM Connection Protection** checks both IPv4 and IPv6 socket tables for an established Google Play services connection to remote port 5228–5230. A match skips the ordinary targeted `GCM_RECONNECT`; no match refreshes the cached GMS UID, records the UID in diagnostics, and sends the request. An unavailable probe fails open by sending, and one request is mandatory every 10 runnable minutes even while sockets match. Users can turn off these reconnect requests without disabling `MILLET_NO_RESTRICT_APP` repair. Healthy matched polls remain silent. The loop remains entirely inside the UserService and holds no wake lock, so Java timers cannot wake a suspended device and the selected interval is not a wall-clock guarantee during Doze. Aurogon rules are reconciled immediately during protection/configuration operations, with the existing 15-minute recovery work as a safety net.
+**FCM Connection Protection** is a separate, optional workaround for CN GMS builds that may not reconnect promptly. It checks whether GMS has an established FCM socket on ports 5228–5230. When no connection is found—or the check is unavailable—it sends a targeted `com.google.android.intent.action.GCM_RECONNECT` broadcast. A broadcast is also sent at least once every 10 runnable minutes. Turning this option off does not disable the `MILLET_NO_RESTRICT_APP` repair.
 
-No-match diagnostics also include the currently configured polling interval.
+### Managed apps
 
-At startup, the service also runs these defense-in-depth commands:
+The app list contains non-system packages that declare a receiver for `com.google.android.c2dm.intent.RECEIVE`. Each enabled app has four independent controls:
 
-```sh
-dumpsys greezer IM GMS disable
-dumpsys greezer LM add com.google.android.gms
-```
+- Aurogon FCM protection: permits the FCM Intent through Xiaomi's broadcast control so it can be delivered to the app, including when delivery requires starting the app.
+- Auto unstop (Android 16+): clears `FLAG_STOPPED` every 15 minutes so the app remains eligible to be started by FCM; it does not launch the app itself.
+- HyperOS Autostart: permits the process start when FCM delivery targets an app with no running process, such as after the process has been killed. In that case it works together with the Aurogon rule. It manages both Xiaomi Autostart AppOps.
+- AOSP battery optimization: mainly lets users suppress an app's background activity while keeping FCM unaffected. It applies Unrestricted, Optimized, or Restricted to the selected Android profiles.
 
-The first command clears the runtime `mGmsLimitEnabled` flag. The second restores GMS to Aurogon's ordinary runtime allowlist. Neither command replaces the `MILLET_NO_RESTRICT_APP` repair, which also covers the separate `PowerStrategyMode` freeze paths.
+On first enable, Aurogon, Auto unstop, and Autostart management are turned on. WeChat and Telegram are enabled by default and start with battery optimization managed as **Optimized**; other discovered apps start disabled with battery management off.
 
-WorkManager provides a recovery and bootstrap fallback. A fixed 15-minute recovery job recreates the Shizuku monitor after a reboot, app update, or Shizuku restart, and clears `FLAG_STOPPED` for enabled FCM apps whose Auto unstop switch is on. A separate, configurable job refreshes FCM protection, every enabled app's managed Autostart and AOSP battery-optimization policies, and this app's own HyperOS background permissions. It can be disabled without disabling the dedicated FCM recovery, Auto unstop, or a running Shizuku monitor. WorkManager timing is not the primary response to a PowerKeeper setting rewrite.
+Disabling an app removes it from the managed Aurogon and Auto unstop sets while retaining its saved choices. If battery management was enabled, the app is changed to **Optimized** once. Its Autostart state is left unchanged.
 
-The app list is limited to non-system packages that expose a receiver for `com.google.android.c2dm.intent.RECEIVE`. System and updated-system apps are excluded, while previously saved packages remain visible if they are no longer installed.
+**Apply now** processes every enabled app. A separate WorkManager job uses the **Periodical enforcement frequency** setting to reapply managed Autostart and battery policies automatically for every enabled app. Setting it to **Off** disables this periodic enforcement job, but does not stop GMS protection, the fixed 15-minute GMS and Aurogon recovery job, or Auto unstop.
 
-Enabling an app activates its saved configuration. The first time an app is enabled, Aurogon, Auto unstop, and management of both Xiaomi Autostart AppOps are enabled. Later enable and disable cycles preserve the Aurogon, Auto unstop, Autostart, and battery selections. Disabling an app removes it from this app's Aurogon and Auto unstop package sets. If AOSP battery-optimization management was enabled, disabling the app also applies Optimized once; otherwise, it leaves the battery state unchanged. Autostart is never changed when the app is disabled. All subsequent startup, periodic, and manual full passes exclude the app until it is enabled again. Aurogon and Auto unstop are independent settings: disabling either one does not disable the app or stop its other configured policies. Auto unstop runs in the independent fixed 15-minute FCM recovery job.
-
-Packages in `HYPEROS_AUTO_UNRESTRICTED_PACKAGES` (currently `com.tencent.mm` and `org.telegram.messenger`) default to the app being enabled, with Aurogon and Auto unstop on, Autostart management on and set to Enabled, and battery management on and set to Optimized. Other packages default to the app being disabled, with Aurogon, Auto unstop, Autostart management, and battery management off; their retained selector defaults are Disabled and Optimized. This package set is used only to seed defaults.
-
-Individual controls use targeted Shizuku operations, so changing one setting does not run the full enforcement pass. The explicit **Apply now** action processes every enabled app and runs Auto unstop for selected packages. Periodic WorkManager and stale-on-start enforcement process every enabled app while respecting each Autostart and battery management switch. The global periodical-enforcement frequency, including Off, controls these AppOps and battery passes, while the fixed 15-minute FCM recovery job handles Auto unstop independently.
-
-Autostart and AOSP battery optimization each have an explicit management switch. Turning a management switch off prevents AppOps changes for that setting while retaining its selected value, and hides its Material 3 selector. Turning management on reveals the selector and applies the retained value. The battery selector is ordered Unrestricted, Optimized, Restricted.
-
-Bulk enforcement reconciles GMS and Aurogon once, takes one snapshot of installed packages for each selected Android user, and then processes at most 16 app policies per Binder command batch. **Apply now**, periodic WorkManager, and stale-on-start enforcement all use this bounded path. Intermediate chunks omit manager self-protection and `appops write-settings`; those operations run only once per bulk pass. The **Apply now** button receives per-app completion markers from each chunk and displays exact completed and total counts.
+Autostart and battery policies target the Android profiles selected in the app; the owner and XSpace profiles are selected by default. Android's unrestricted device-idle allowlist is package-wide, so Unrestricted and Optimized changes are not isolated per profile.
 
 ## Diagnostics
 
-The in-app diagnostics viewer combines WorkManager runs, Shizuku connection events, privileged commands, and FCM repairs into rotating session files. UI interactions are not logged. Open **Diagnostics** at the bottom of the main screen to inspect selectable text, refresh an active session, or clear all sessions. Logcat entries use the `PowerKeeperFix` prefix. The app retains at most 20 sessions, rolls files at approximately 1 MB, and displays the latest 200 KB of a large session.
-
-## Xiaomi-only installation
-
-The manifest requires the APK-backed `com.miui.system` shared library provided by Xiaomi firmware. Android's Package Manager rejects installation when this library is absent. A runtime guard verifies Android owner user 0, the `Xiaomi` manufacturer, the shared library, and the `com.miui.system` system package before scheduling work or invoking Shizuku. Secondary-user and XSpace instances remain inactive; the owner-user instance can still manage per-app policies for the selected Android users.
-
-Both Xiaomi Autostart AppOps are enabled for the app on owner user 0: enforcement operation `10008` and Security Center switch-state operation `10053`. Self-protection also permits Xiaomi's boot-completed (`10007`), background-activity-start (`10021`), and foreground-service (`10023`) gates. A small manifest receiver listens only for the `BOOT_COMPLETED` and app-specific `MY_PACKAGE_REPLACED` broadcasts, then restores the periodic schedule and starts an immediate recovery attempt.
-
-## Safety model
-
-The app does not use root, UID-wide AppOps, uninstall operations, data clearing, UI automation, or destructive filesystem operations. It does not modify the PowerKeeper package. Its long-running Shizuku UserService exposes only the fixed enforcement and FCM-monitoring operations required by the app. Inside that shell-identity service, Android system commands are dispatched through each system service's Binder shell or dump entry point instead of spawning `/system/bin` child processes.
-
-Android's device-idle allowlist is global per application ID. Unrestricted and Optimized allowlist changes are therefore not user-scoped; per-user AppOps changes target only the Android users enabled in the app. Owner (`0`) and XSpace (`999`) users are enabled by default, while other discovered users are disabled by default.
+Open **Diagnostics** at the bottom of the main screen to inspect, refresh, copy, or clear session logs covering Shizuku connections, background jobs, privileged operations, and FCM repairs. The files are stored under `/storage/emulated/0/Android/data/net.extrawdw.apps.miuisucks.powerkeeper/files/logs/`. Logcat entries use the `PowerKeeperFix` prefix.
 
 ## Technical investigation
 
-The sanitized device and framework investigation behind the FCM protection design is documented in [docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md). A focused report explains [when PowerKeeper rewrites `MILLET_NO_RESTRICT_APP` and why it needs a prompt watchdog](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md).
+- [Xiaomi HyperOS GMS, FCM, and Greezer investigation](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)
+- [PowerKeeper `MILLET_NO_RESTRICT_APP` rewrite investigation](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)
 
 ## Build
 
-Open the project in Android Studio and run the `app` configuration. Install the latest [Shizuku GitHub release](https://github.com/RikkaApps/Shizuku/releases) on the target Xiaomi device and start it through wireless debugging, ADB, or Sui. The user must authorize HyperOS FCM Fix in Shizuku.
+Open the project in Android Studio and run the `app` configuration.

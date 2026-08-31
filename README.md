@@ -4,7 +4,7 @@
 
 HyperOS FCM Fix prevents Xiaomi HyperOS from freezing Google Play services or over-restricting apps that need timely Firebase Cloud Messaging (FCM) notifications. It uses Shizuku's ADB shell identity and does not require root.
 
-[![GitHub release](https://img.shields.io/github/v/release/dingwen07/hyperos-fcm-fix?include_prereleases=true&label=GitHub%20Release&logo=github)](https://github.com/dingwen07/hyperos-fcm-fix/releases)
+[<img src="https://raw.githubusercontent.com/machiav3lli/oandbackupx/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" alt="Get it on GitHub" height="80">](https://github.com/dingwen07/hyperos-fcm-fix/releases)
 
 [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22net.extrawdw.apps.miuisucks.powerkeeper%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdingwen07%2Fhyperos-fcm-fix%22%2C%22author%22%3A%22dingwen07%22%2C%22name%22%3A%22HyperOS%20FCM%20Fix%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
 

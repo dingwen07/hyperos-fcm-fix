@@ -1,7 +1,6 @@
 package net.extrawdw.apps.miuisucks.powerkeeper
 
 import android.os.Process
-import android.os.SystemClock
 import android.util.Log
 import java.io.BufferedWriter
 import java.io.File
@@ -33,7 +32,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     @Volatile
     private var fcmReconnectEnabled = true
     private var cachedGmsUid: Int? = null
-    private var nextMandatoryFcmReconnectElapsed = 0L
     private val serviceLogLock = Any()
     private val serviceLogTimeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
     private val pendingServiceLogs = ArrayDeque<String>()
@@ -91,7 +89,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         val includeAutostartSwitchOp = isAutostartSwitchOpAvailable()
         serviceLog(
             'I',
-            "Enforce",
+            "Enforcement",
             "start trigger=$trigger aurogon=${aurogonPackages.size} policies=${policies.size} batches=${batches.size} users=${targetUsers.joinToString()}",
         )
         notifyProgress(progressCallback, 0, policies.size)
@@ -143,9 +141,9 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             }
         }.onSuccess { report ->
             val durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-            serviceLog('I', "Enforce", "finish trigger=$trigger durationMs=$durationMillis report=${report.singleLine(4_000)}")
+            serviceLog('I', "Enforcement", "finish trigger=$trigger durationMs=$durationMillis report=${report.singleLine(4_000)}")
         }.onFailure { error ->
-            serviceLog('E', "Enforce", "failed trigger=$trigger error=${error.stackTraceToString().take(4_000)}")
+            serviceLog('E', "Enforcement", "failed trigger=$trigger error=${error.stackTraceToString().take(4_000)}")
         }.getOrThrow()
     }
 
@@ -268,7 +266,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         if (callback == null) return
         runCatching { callback.onProgress(completed, total) }
             .onFailure { error ->
-                serviceLog('W', "Enforce", "progress callback failed: ${error.message ?: error.javaClass.simpleName}")
+                serviceLog('W', "Enforcement", "progress callback failed: ${error.message ?: error.javaClass.simpleName}")
             }
     }
 
@@ -290,9 +288,10 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         trigger: String,
     ): String {
         val desired = aurogonPackages.toSet()
+        val logTag = fcmLogTag(trigger)
         serviceLog(
             'I',
-            "FCM",
+            logTag,
             "start trigger=$trigger aurogon=${desired.size} pollActive=${isFcmPollingActive()}",
         )
         startFcmPolling()
@@ -301,7 +300,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             appendLine("FCM protection")
             appendLine(runGreezerCommand("Disable explicit GMS limiter", "IM", "GMS", "disable"))
             appendLine(runGreezerCommand("Restore ordinary GMS allowlist", "LM", "add", MilletNoRestrictList.GMS_PACKAGE))
-            appendLine(ensureGmsNoRestrict())
+            appendLine(ensureGmsNoRestrict(logTag))
             appendLine(ensureAurogon(desired))
             append(
                 "FCM setting monitor: active " +
@@ -309,7 +308,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                     "reconnect ${if (fcmReconnectEnabled) "enabled" else "disabled"})",
             )
         }
-        serviceLog('I', "FCM", "finish trigger=$trigger report=${report.singleLine(2_000)}")
+        serviceLog('I', logTag, "finish trigger=$trigger report=${report.singleLine(2_000)}")
         return report
     }
 
@@ -539,7 +538,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         val label = MilletPollingInterval.diagnosticLabel(intervalMillis)
         serviceLog(
             'I',
-            "FCM",
+            fcmLogTag(trigger),
             "poll configured trigger=$trigger interval=$label changed=$changed " +
                 "fcmReconnect=$fcmReconnectEnabled reconnectChanged=$reconnectChanged wasActive=$wasActive",
         )
@@ -566,7 +565,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         )
         serviceLog(
             'I',
-            "FCM",
+            FCM_POLL_LOG_TAG,
             "poll started interval=${MilletPollingInterval.diagnosticLabel(intervalMillis)}",
         )
     }
@@ -575,30 +574,28 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         fcmPolling?.let { !it.isCancelled && !it.isDone } == true
 
     private fun runFcmPoll() {
-        runCatching { ensureGmsNoRestrict() }
+        runCatching { ensureGmsNoRestrict(FCM_POLL_LOG_TAG) }
             .onSuccess { result -> logMilletRepairResult(result) }
             .onFailure { error ->
-                serviceLog('E', "MILLET", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
+                serviceLog('E', FCM_POLL_LOG_TAG, "MILLET repair crashed: ${error.stackTraceToString().take(4_000)}")
             }
-        if (fcmReconnectEnabled) runFcmReconnectProtection()
+        if (fcmReconnectEnabled) {
+            runCatching { runFcmReconnectProtection() }
+                .onFailure { error ->
+                    serviceLog(
+                        'E',
+                        FCM_POLL_LOG_TAG,
+                        "reconnect protection crashed: ${error.stackTraceToString().take(4_000)}",
+                    )
+                }
+        }
     }
 
     private fun runFcmReconnectProtection() {
-        val nowElapsed = SystemClock.elapsedRealtime()
-        if (
-            FcmReconnectPolicy.isMandatoryReconnectDue(
-                nowElapsed,
-                nextMandatoryFcmReconnectElapsed,
-            )
-        ) {
-            sendGcmReconnect(nowElapsed)
-            return
-        }
-
         val previouslyCachedUid = cachedGmsUid
         val gmsUid = previouslyCachedUid ?: refreshCachedGmsUid()
         if (gmsUid == null) {
-            sendGcmReconnect(nowElapsed)
+            forceFcmReconnect("poll:gms-uid-unavailable")
             return
         }
 
@@ -607,14 +604,14 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             FcmSocketProbeResult.NO_MATCH -> {
                 serviceLog(
                     'I',
-                    "FCM",
+                    FCM_POLL_LOG_TAG,
                     "socket no match cachedGmsUid=$gmsUid " +
                         "pollInterval=${MilletPollingInterval.diagnosticLabel(fcmPollingIntervalMillis)}",
                 )
                 if (previouslyCachedUid != null) refreshCachedGmsUid()
-                sendGcmReconnect(nowElapsed)
+                forceFcmReconnect("poll:socket-missing")
             }
-            FcmSocketProbeResult.UNAVAILABLE -> sendGcmReconnect(nowElapsed)
+            FcmSocketProbeResult.UNAVAILABLE -> forceFcmReconnect("poll:socket-unavailable")
         }
     }
 
@@ -637,7 +634,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         return resolvedUid
     }
 
-    private fun sendGcmReconnect(nowElapsed: Long) {
+    override fun forceFcmReconnect(trigger: String): String {
+        val logTag = fcmLogTag(trigger)
         val result = runSystemCommand(
             SystemServiceCommands.activity(
                 "broadcast",
@@ -650,26 +648,36 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             ),
             FCM_COMMAND_TIMEOUT_SECONDS,
         )
-        if (result.succeeded) {
-            nextMandatoryFcmReconnectElapsed =
-                FcmReconnectPolicy.nextMandatoryReconnectElapsed(nowElapsed)
+        val report = if (result.succeeded) {
+            "FCM reconnect: broadcast sent"
+        } else {
+            "FCM reconnect: FAILED to send broadcast (${result.summary})"
         }
+        serviceLog(
+            if (result.succeeded) 'I' else 'E',
+            logTag,
+            "reconnect trigger=$trigger result=${report.singleLine(2_000)}",
+        )
+        return report
     }
 
     private fun logMilletRepairResult(result: String) {
         if (result.contains("FAILED")) {
-            Log.w(TAG, "MILLET repair (poll): $result")
-            serviceLog('E', "MILLET", "repair reason=poll result=${result.singleLine(2_000)}")
+            serviceLog('E', FCM_POLL_LOG_TAG, "MILLET repair result=${result.singleLine(2_000)}")
         } else if (result.contains("append write completed")) {
-            Log.i(TAG, "MILLET repair (poll): $result")
-            serviceLog('I', "MILLET", "repair reason=poll result=${result.singleLine(2_000)}")
+            serviceLog('I', FCM_POLL_LOG_TAG, "MILLET repair result=${result.singleLine(2_000)}")
         }
     }
 
-    private fun ensureGmsNoRestrict(): String = synchronized(fcmRepairLock) {
+    private fun fcmLogTag(trigger: String): String = when {
+        trigger.startsWith(FCM_POLL_TRIGGER_PREFIX) -> FCM_POLL_LOG_TAG
+        else -> FCM_LOG_TAG
+    }
+
+    private fun ensureGmsNoRestrict(logTag: String): String = synchronized(fcmRepairLock) {
         val initialRead = readMilletNoRestrict()
         if (!initialRead.succeeded) {
-            serviceLog('E', "MILLET", "read failed ${initialRead.summary}")
+            serviceLog('E', logTag, "MILLET read failed ${initialRead.summary}")
             return@synchronized "MILLET no-restrict: FAILED to read (${initialRead.summary})"
         }
 
@@ -692,11 +700,15 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             SETTINGS_COMMAND_TIMEOUT_SECONDS,
         )
         if (!write.succeeded) {
-            serviceLog('E', "MILLET", "append failed existing=${existing.joinToString()} ${write.summary}")
+            serviceLog('E', logTag, "MILLET append failed existing=${existing.joinToString()} ${write.summary}")
             return@synchronized "MILLET no-restrict: FAILED to append GMS (${write.summary})"
         }
 
-        serviceLog('I', "MILLET", "append write completed existing=${existing.joinToString()} updated=${updated.joinToString()}")
+        serviceLog(
+            'I',
+            logTag,
+            "MILLET append write completed existing=${existing.joinToString()} updated=${updated.joinToString()}",
+        )
         "MILLET no-restrict: append write completed after preserving ${existing.size} entries"
     }
 
@@ -924,6 +936,9 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val MAX_PENDING_LOG_CHARS = 128_000
         private const val SETTINGS_USER = "0"
         private const val GCM_RECONNECT_ACTION = "com.google.android.intent.action.GCM_RECONNECT"
+        private const val FCM_LOG_TAG = "FCM"
+        private const val FCM_POLL_LOG_TAG = "FCMPoll"
+        private const val FCM_POLL_TRIGGER_PREFIX = "poll:"
         private const val NANOS_PER_SECOND = 1_000_000_000L
     }
 }

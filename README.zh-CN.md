@@ -39,9 +39,11 @@ HyperOS FCM Fix 用于防止小米 HyperOS 冻结 Google Play 服务，或过度
 
 核心修复会保留 `Settings.System.MILLET_NO_RESTRICT_APP` 中的所有现有条目，仅在缺少 `com.google.android.gms` 时将其追加到列表。Shizuku UserService 默认每 30 秒检查一次，也可选择 60 秒或 120 秒。
 
-UserService 不持有唤醒锁。设备进入 Doze 且进程被挂起时，轮询会暂停，并在进程再次获得运行机会后继续，因此无法保证严格按照所选间隔执行。固定的 15 分钟 WorkManager 恢复任务会在 Shizuku 可用时重新建立监控，并重新应用 GMS 和 Aurogon 保护；它也会执行自动解除停止。
+每次执行完整的 FCM 保护流程时，还会执行等效于 `dumpsys greezer IM GMS disable` 和 `dumpsys greezer LM add com.google.android.gms` 的操作。固定恢复任务、设备启动或应用更新后的恢复、**立即应用**以及可配置的定期策略执行都会触发该流程。这些命令不属于 30/60/120 秒轮询。设备启动或应用更新后，恢复任务和过期的策略执行可能同时入队，因此这些命令可能在短时间内执行两次。仅任一 Greezer 命令失败时会报告为不可用，但不会单独触发 WorkManager 重试。
 
-**FCM 连接保护**是一项独立的可选功能，用于 CN GMS 可能不积极重试连接的情况。它会检查 GMS 是否在 5228–5230 端口上存在已建立的 FCM 连接。未找到连接或无法检查时，应用会发送定向的 `com.google.android.intent.action.GCM_RECONNECT` 广播；服务实际运行时间每满 10 分钟也会至少发送一次。关闭此选项不会停用 `MILLET_NO_RESTRICT_APP` 修复。
+UserService 不持有唤醒锁。设备进入 Doze 且进程被挂起时，轮询会暂停，并在进程再次获得运行机会后继续，因此无法保证严格按照所选间隔执行。固定的 15 分钟 WorkManager 恢复任务会在 Shizuku 可用时重新建立监控，并重新应用 GMS 和 Aurogon 保护；它也会执行自动解除停止，并在启用 FCM 连接保护时，最后请求 GMS 重新连接。WorkManager 受系统调度影响，在 Doze 期间可能延后运行。
+
+**FCM 连接保护**是一项独立的可选功能，用于 CN GMS 可能不积极重试连接的情况。UserService 可运行时，它会检查 GMS 是否在 5228–5230 端口上存在已建立的 FCM 连接；未找到连接或无法检查时，应用会发送定向的 `com.google.android.intent.action.GCM_RECONNECT` 广播。恢复任务每次实际运行时也会发送该广播。关闭此选项不会停用 `MILLET_NO_RESTRICT_APP` 修复。
 
 ### 受管理的应用
 

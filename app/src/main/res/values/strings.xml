@@ -64,7 +64,7 @@
     <string name="millet_polling_frequency">Polling frequency</string>
     <string name="millet_polling_frequency_description">How often the Shizuku User Service checks and repairs this setting and, when enabled, checks the FCM connection. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
     <string name="fcm_reconnect_protection">FCM Connection Protection</string>
-    <string name="fcm_reconnect_protection_description">Checks the FCM connection and asks Google Play services to reconnect when needed.</string>
+    <string name="fcm_reconnect_protection_description">Checks the FCM connection while monitoring is active and asks Google Play services to reconnect during periodic recovery.</string>
     <string name="polling_interval_seconds">%1$ss</string>
     <string name="millet_no_restrict_description">Apps currently exempt from HyperOS background restrictions.</string>
     <string name="millet_no_restrict_empty">No packages in the list.</string>

@@ -64,7 +64,7 @@
     <string name="millet_polling_frequency">轮询频率</string>
     <string name="millet_polling_frequency_description">Shizuku 用户服务按此频率检查并修复此设置，并在启用时检查 FCM 连接。轮询循环始终在该服务内运行，且不会创建和持有唤醒锁定。</string>
     <string name="fcm_reconnect_protection">FCM 连接保护</string>
-    <string name="fcm_reconnect_protection_description">检查 FCM 连接，并在需要时请求 Google Play 服务重新连接。</string>
+    <string name="fcm_reconnect_protection_description">监控运行时检查 FCM 连接，并在定期恢复任务中请求 Google Play 服务重新连接。</string>
     <string name="polling_interval_seconds">%1$s 秒</string>
     <string name="millet_no_restrict_description">当前不受 HyperOS 后台限制的应用列表。</string>
     <string name="millet_no_restrict_empty">列表中没有应用。</string>

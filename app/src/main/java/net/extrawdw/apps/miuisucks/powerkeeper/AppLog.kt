@@ -11,8 +11,8 @@ import java.util.concurrent.Executors
 
 /** Rotating file logger used by background work and the Shizuku UserService. */
 object AppLog {
-    private const val TAG_PREFIX = "PowerKeeperFix"
-    private const val MAX_FILES = 20
+    private const val TAG_PREFIX = "HyperOSFCMFix"
+    private const val MAX_FILES = 128
     private const val MAX_FILE_BYTES = 1_000_000L
     private const val MAX_VIEW_BYTES = 200_000
 

@@ -137,7 +137,10 @@ class MainActivity : ComponentActivity() {
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshState()
         refreshShizukuStatus { status ->
-            if (status.granted) maybeApplyStaleSettings()
+            if (status.granted) {
+                refreshProtectionStatus()
+                maybeApplyStaleSettings()
+            }
         }
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
@@ -163,7 +166,10 @@ class MainActivity : ComponentActivity() {
             messageIsError = !granted,
         )
         refreshShizukuStatus { status ->
-            if (status.granted) maybeApplyStaleSettings()
+            if (status.granted) {
+                refreshProtectionStatus()
+                maybeApplyStaleSettings()
+            }
         }
     }
 
@@ -184,7 +190,7 @@ class MainActivity : ComponentActivity() {
                         onApplyNow = ::applyNow,
                         onRefreshAndroidUsers = { refreshAndroidUsers() },
                         onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
-                        onCheckMilletValue = ::checkMilletValue,
+                        onRefreshProtectionStatus = ::refreshProtectionStatus,
                         onMilletPollingIntervalSelected = ::setMilletPollingInterval,
                         onFcmReconnectEnabledChanged = ::setFcmReconnectEnabled,
                         onOpenFcmDiagnostics = ::openFcmDiagnostics,
@@ -240,7 +246,7 @@ class MainActivity : ComponentActivity() {
             refreshShizukuStatus { status ->
                 if (status.granted) {
                     if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
-                    checkMilletValue()
+                    refreshProtectionStatus()
                     maybeApplyStaleSettings()
                 }
             }
@@ -255,7 +261,7 @@ class MainActivity : ComponentActivity() {
             refreshShizukuStatus { status ->
                 if (status.granted) {
                     if (uiState.settings.androidUsers.isEmpty()) refreshAndroidUsers()
-                    if (!uiState.applying) checkMilletValue()
+                    if (!uiState.applying) refreshProtectionStatus()
                 }
             }
         }
@@ -729,7 +735,7 @@ class MainActivity : ComponentActivity() {
                         ),
                         messageIsError = !succeeded,
                     )
-                    checkMilletValue()
+                    refreshProtectionStatus()
                 }
                 .onFailure { error ->
                     val report = getString(
@@ -800,12 +806,20 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun checkMilletValue() {
+    private fun refreshProtectionStatus() {
         if (!uiState.shizuku.granted || uiState.checkingMilletValue) return
 
+        val settings = settingsStore.loadSettings()
         uiState = uiState.copy(checkingMilletValue = true)
         lifecycleScope.launch {
-            runCatching { PrivilegedServiceClient.getMilletNoRestrictValue(TRIGGER_UI_MILLET) }
+            runCatching {
+                PrivilegedServiceClient.configureFcmPolling(
+                    settings.milletPollingIntervalMillis,
+                    settings.fcmReconnectEnabled,
+                    TRIGGER_UI_PROTECTION_STATUS,
+                )
+                PrivilegedServiceClient.getMilletNoRestrictValue(TRIGGER_UI_PROTECTION_STATUS)
+            }
                 .onSuccess { value ->
                     val failed = value.startsWith("FAILED:")
                     uiState = uiState.copy(
@@ -867,7 +881,7 @@ class MainActivity : ComponentActivity() {
         private const val FCM_DIAGNOSTICS_ACTIVITY = "com.google.android.gms.gcm.GcmDiagnostics"
         private const val TRIGGER_UI_APPLY = "ui:apply"
         private const val TRIGGER_UI_USERS = "ui:user-list"
-        private const val TRIGGER_UI_MILLET = "ui:millet-check"
+        private const val TRIGGER_UI_PROTECTION_STATUS = "ui:protection-status"
         private const val TRIGGER_UI_MILLET_POLLING_INTERVAL = "ui:millet-polling-interval"
         private const val TRIGGER_UI_FCM_RECONNECT = "ui:fcm-reconnect"
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
@@ -903,7 +917,7 @@ private fun GuardApp(
     onApplyNow: () -> Unit,
     onRefreshAndroidUsers: () -> Unit,
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
-    onCheckMilletValue: () -> Unit,
+    onRefreshProtectionStatus: () -> Unit,
     onMilletPollingIntervalSelected: (Long) -> Unit,
     onFcmReconnectEnabledChanged: (Boolean) -> Unit,
     onOpenFcmDiagnostics: () -> Unit,
@@ -993,7 +1007,7 @@ private fun GuardApp(
                 item {
                     MilletNoRestrictCard(
                         state = state,
-                        onCheckValue = onCheckMilletValue,
+                        onCheckValue = onRefreshProtectionStatus,
                         onPollingIntervalSelected = onMilletPollingIntervalSelected,
                         onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
                     )

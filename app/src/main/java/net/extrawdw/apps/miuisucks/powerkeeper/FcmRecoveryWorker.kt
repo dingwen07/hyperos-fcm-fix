@@ -12,13 +12,13 @@ class FcmRecoveryWorker(
 ) : CoroutineWorker(appContext, workerParameters) {
     override suspend fun doWork(): Result {
         val compatibility = XiaomiCompatibility.check(applicationContext)
-        AppLog.i("Worker/FCM", "start id=$id attempt=$runAttemptCount supported=${compatibility.supported}")
+        AppLog.i(LOG_TAG, "start id=$id attempt=$runAttemptCount supported=${compatibility.supported}")
         if (!compatibility.supported) {
-            AppLog.e("Worker/FCM", "unsupported: ${compatibility.reason}")
+            AppLog.e(LOG_TAG, "unsupported: ${compatibility.reason}")
             return Result.failure()
         }
         if (!isShizukuAvailable()) {
-            AppLog.w("Worker/FCM", "Shizuku unavailable; retrying")
+            AppLog.w(LOG_TAG, "Shizuku unavailable; retrying")
             return Result.retry()
         }
 
@@ -26,7 +26,7 @@ class FcmRecoveryWorker(
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         }.getOrDefault(false)
         if (!permissionGranted) {
-            AppLog.w("Worker/FCM", "Shizuku permission missing; finishing without retry")
+            AppLog.w(LOG_TAG, "Shizuku permission missing; finishing without retry")
             return Result.success()
         }
 
@@ -49,16 +49,21 @@ class FcmRecoveryWorker(
                     "background:auto-unstop",
                 )
             }
-            "$fcmReport\n$unstopReport"
+            val reconnectReport = if (settings.fcmReconnectEnabled) {
+                PrivilegedServiceClient.forceFcmReconnect("background:fcm-recovery")
+            } else {
+                "FCM reconnect: disabled"
+            }
+            "$fcmReport\n$unstopReport\n$reconnectReport"
         }
             .fold(
                 onSuccess = { report ->
                     val failed = report.contains("FAILED") || report.contains("exit_code=")
-                    AppLog.i("Worker/FCM", "finish failed=$failed report=$report")
+                    AppLog.i(LOG_TAG, "finish failed=$failed report=$report")
                     if (failed) Result.retry() else Result.success()
                 },
                 onFailure = { error ->
-                    AppLog.e("Worker/FCM", "failed; retrying", error)
+                    AppLog.e(LOG_TAG, "failed; retrying", error)
                     Result.retry()
                 },
             )
@@ -67,4 +72,8 @@ class FcmRecoveryWorker(
     private fun isShizukuAvailable(): Boolean = runCatching {
         Shizuku.pingBinder() && !Shizuku.isPreV11()
     }.getOrDefault(false)
+
+    private companion object {
+        const val LOG_TAG = "Worker/FCMRecovery"
+    }
 }

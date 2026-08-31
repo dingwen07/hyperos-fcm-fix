@@ -41,7 +41,7 @@ Using Shizuku's ADB shell identity, the app can:
 
 ## FCM protection
 
-The durable, package-specific fix reads the current `MILLET_NO_RESTRICT_APP` value, appends `com.google.android.gms` only when it is absent, writes the preserved list, and verifies the result. A long-running Shizuku UserService checks that setting every 2.5 seconds while the device is active, repairing PowerKeeper overwrites before the identified delayed-freeze paths normally run. Aurogon rules are reconciled immediately during protection/configuration operations, with the existing 15-minute recovery work as a safety net. Java timers cannot wake a suspended device; however, PowerKeeper typically rewrites the setting while the user is already interacting with its UI.
+The durable, package-specific fix reads the current `MILLET_NO_RESTRICT_APP` value, appends `com.google.android.gms` only when it is absent, writes the preserved list, and verifies the result. A long-running Shizuku UserService checks that setting every 2.5 seconds by default while the device is active; the app also offers 5-, 10-, and 30-second intervals. The polling and repair loop remains entirely inside the UserService. It repairs PowerKeeper overwrites before the identified delayed-freeze paths normally run. Aurogon rules are reconciled immediately during protection/configuration operations, with the existing 15-minute recovery work as a safety net. Java timers cannot wake a suspended device; however, PowerKeeper typically rewrites the setting while the user is already interacting with its UI.
 
 At startup, the service also runs these defense-in-depth commands:
 

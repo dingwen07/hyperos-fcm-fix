@@ -6,6 +6,7 @@ import androidx.core.content.edit
 data class GuardSettings(
     val appPolicies: Map<String, AppPolicy>,
     val intervalMinutes: Long,
+    val milletPollingIntervalMillis: Long,
     val androidUsers: List<AndroidUserSelection>,
 ) {
     fun policyFor(packageName: String): AppPolicy =
@@ -45,6 +46,12 @@ class GuardSettingsStore(context: Context) {
         appPolicies = loadAppPolicies(),
         intervalMinutes = normalizeIntervalMinutes(
             preferences.getLong(KEY_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES),
+        ),
+        milletPollingIntervalMillis = MilletPollingInterval.normalize(
+            preferences.getLong(
+                KEY_MILLET_POLLING_INTERVAL_MILLIS,
+                MilletPollingInterval.DEFAULT_MILLIS,
+            ),
         ),
         androidUsers = loadAndroidUsers(),
     )
@@ -113,6 +120,15 @@ class GuardSettingsStore(context: Context) {
     fun setIntervalMinutes(minutes: Long) {
         preferences.edit {
             putLong(KEY_INTERVAL_MINUTES, normalizeIntervalMinutes(minutes))
+        }
+    }
+
+    fun setMilletPollingIntervalMillis(intervalMillis: Long) {
+        preferences.edit {
+            putLong(
+                KEY_MILLET_POLLING_INTERVAL_MILLIS,
+                MilletPollingInterval.normalize(intervalMillis),
+            )
         }
     }
 
@@ -200,6 +216,7 @@ class GuardSettingsStore(context: Context) {
         private const val PREFERENCES_NAME = "guard_settings"
         private const val KEY_APP_POLICIES = "app_policies"
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
+        private const val KEY_MILLET_POLLING_INTERVAL_MILLIS = "millet_polling_interval_millis"
         private const val KEY_ANDROID_USERS = "android_users"
         private const val KEY_LAST_RUN_TIMESTAMP = "last_run_timestamp"
         private const val KEY_LAST_RUN_SUCCEEDED = "last_run_succeeded"

@@ -58,10 +58,14 @@
     <string name="app_doze_restricted_description">Restrict background AppOps. Notifications and background work may be delayed.</string>
 
     <string name="google_play_services">Google Play services</string>
+    <string name="google_play_services_protection">Google Play Service Protection</string>
     <string name="gms_status_not_checked">Status not checked</string>
     <string name="gms_status_unavailable">Status unavailable</string>
     <string name="gms_status_protected">Protection active</string>
     <string name="gms_status_needs_attention">Needs attention</string>
+    <string name="millet_polling_frequency">Polling frequency</string>
+    <string name="millet_polling_frequency_description">How often the Shizuku User Service checks and repairs this setting. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
+    <string name="polling_interval_seconds">%1$ss</string>
     <string name="millet_no_restrict_description">Packages that HyperOS should leave unrestricted.</string>
     <string name="millet_no_restrict_empty">No packages in the list.</string>
     <string name="checking">Checking…</string>
@@ -70,7 +74,6 @@
     <string name="fcm_diagnostics_unavailable_message">FCM Diagnostics is not available in this version of Google Play services.</string>
 
     <string name="check_frequency">Periodical enforcement frequency</string>
-    <string name="check_frequency_description">How often apps with Periodic enforcement enabled have only their managed HyperOS Autostart and AOSP Battery optimization settings restored. Off disables this per-app task; the separate 15-minute Aurogon, Auto unstop, and GMS recovery task remains scheduled.</string>
     <string name="off">Off</string>
     <string name="interval_minutes">%1$d min</string>
     <string name="interval_one_hour">1 hour</string>
@@ -113,6 +116,8 @@
     <string name="app_setting_applied_message">%1$s setting applied.</string>
     <string name="app_setting_failed_message">Could not apply %1$s setting: %2$s</string>
     <string name="frequency_changed_message">Check frequency changed to %1$s.</string>
+    <string name="millet_polling_frequency_changed_message">MILLET polling frequency changed to %1$s.</string>
+    <string name="millet_polling_frequency_apply_failed_message">Saved the %1$s MILLET polling frequency, but could not update the running Shizuku service: %2$s</string>
     <string name="applying_settings_message">Applying settings…</string>
     <string name="applying_progress">Applying %1$d / %2$d</string>
     <string name="settings_applied_message">Settings applied.</string>

@@ -13,4 +13,5 @@ interface IPrivilegedService {
     String applyAppPolicy(String packageName, boolean autostartManaged, boolean autostartEnabled, boolean dozeManaged, int dozePolicy, in int[] targetUserIds, String trigger) = 7;
     String enforceBatched(in String[] aurogonPackages, in String[] policyPackages, in boolean[] autostartManaged, in boolean[] autostartEnabled, in boolean[] dozeManaged, in int[] dozePolicies, in int[] targetUserIds, String trigger, IEnforcementProgressCallback progressCallback) = 8;
     String unstop(in String[] packageNames, in int[] targetUserIds, String trigger) = 9;
+    String configureFcmPolling(long intervalMillis, String trigger) = 10;
 }

@@ -1,5 +1,11 @@
 package net.extrawdw.apps.miuisucks.powerkeeper
 
+import android.view.WindowManager
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +31,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,21 +41,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
+import kotlin.coroutines.cancellation.CancellationException
 
-/** Pathline-style stacked full-screen dialogs: Back closes a file, then the viewer, never the app. */
+private const val DialogTransitionMillis = 220
+
+/** Stacked full-screen dialogs: Back closes a file, then the viewer, never the app. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(
@@ -80,13 +96,16 @@ fun LogViewerScreen(
     FullScreenLogDialog(
         onDismiss = onDismiss,
         dismissEnabled = !clearing,
-    ) {
+    ) { requestClose ->
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.diagnostics)) },
                     navigationIcon = {
-                        TextButton(onClick = onDismiss, enabled = !clearing) {
+                        TextButton(
+                            onClick = { requestClose(onDismiss) },
+                            enabled = !clearing,
+                        ) {
                             Text(stringResource(R.string.back))
                         }
                     },
@@ -148,13 +167,15 @@ fun LogViewerScreen(
         val closeFile = {
             selectedFileName = null
         }
-        FullScreenLogDialog(onDismiss = closeFile) {
+        FullScreenLogDialog(onDismiss = closeFile, dim = false) { requestClose ->
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = { Text(file.name) },
                         navigationIcon = {
-                            TextButton(onClick = closeFile) { Text(stringResource(R.string.back)) }
+                            TextButton(onClick = { requestClose(closeFile) }) {
+                                Text(stringResource(R.string.back))
+                            }
                         },
                         actions = {
                             TextButton(
@@ -226,19 +247,106 @@ fun LogViewerScreen(
 @Composable
 private fun FullScreenLogDialog(
     onDismiss: () -> Unit,
+    dim: Boolean = true,
     dismissEnabled: Boolean = true,
-    content: @Composable () -> Unit,
+    content: @Composable (requestClose: (() -> Unit) -> Unit) -> Unit,
 ) {
+    var visible by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val openness by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(DialogTransitionMillis, easing = FastOutSlowInEasing),
+        finishedListener = { settled ->
+            if (settled == 0f) {
+                val action = pendingAction ?: onDismiss
+                pendingAction = null
+                action()
+            }
+        },
+        label = "dialogOpenness",
+    )
+
+    fun requestClose(andThen: () -> Unit) {
+        if (!dismissEnabled || !visible) return
+        pendingAction = andThen
+        visible = false
+    }
+
+    var gestureInProgress by remember { mutableStateOf(false) }
+    var committing by remember { mutableStateOf(false) }
+    var rawProgress by remember { mutableFloatStateOf(0f) }
+    var swipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+    var touchY by remember { mutableFloatStateOf(0f) }
+    val gesture by animateFloatAsState(
+        targetValue = if (gestureInProgress || committing) rawProgress else 0f,
+        label = "predictiveBack",
+    )
+
     Dialog(
-        onDismissRequest = { if (dismissEnabled) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = { if (dismissEnabled) requestClose(onDismiss) },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+        ),
     ) {
+        if (!dim) DisableDialogDim()
+
+        PredictiveBackHandler(enabled = visible && dismissEnabled) { events ->
+            try {
+                events.collect { event ->
+                    gestureInProgress = true
+                    rawProgress = event.progress
+                    swipeEdge = event.swipeEdge
+                    touchY = event.touchY
+                }
+                gestureInProgress = false
+                committing = true
+                requestClose(onDismiss)
+            } catch (_: CancellationException) {
+                gestureInProgress = false
+                rawProgress = 0f
+            }
+        }
+
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val enterScale = lerp(0.92f, 1f, openness)
+                    val gestureScale = 1f - 0.10f * gesture
+                    val scale = enterScale * gestureScale
+
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = openness * (1f - 0.15f * gesture)
+
+                    transformOrigin = if (gesture > 0f) {
+                        val pivotY = if (size.height > 0f) {
+                            (touchY / size.height).coerceIn(0f, 1f)
+                        } else {
+                            0.5f
+                        }
+                        val pivotX = if (swipeEdge == BackEventCompat.EDGE_LEFT) 1f else 0f
+                        TransformOrigin(pivotX, pivotY)
+                    } else {
+                        TransformOrigin(0.5f, 0.5f)
+                    }
+                },
             color = MaterialTheme.colorScheme.background,
         ) {
-            content()
+            content(::requestClose)
         }
+    }
+}
+
+@Composable
+private fun DisableDialogDim() {
+    val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+    SideEffect {
+        window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window?.setDimAmount(0f)
     }
 }
 

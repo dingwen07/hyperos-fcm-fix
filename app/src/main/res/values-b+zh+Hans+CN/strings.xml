@@ -58,10 +58,14 @@
     <string name="app_doze_restricted_description">限制后台 AppOp，通知和后台工作可能延迟。</string>
 
     <string name="google_play_services">Google Play 服务</string>
+    <string name="google_play_services_protection">Google Play 服务保护</string>
     <string name="gms_status_not_checked">尚未检查状态</string>
     <string name="gms_status_unavailable">状态不可用</string>
     <string name="gms_status_protected">保护已启用</string>
     <string name="gms_status_needs_attention">需要处理</string>
+    <string name="millet_polling_frequency">轮询频率</string>
+    <string name="millet_polling_frequency_description">Shizuku 用户服务按此频率检查并修复此设置。轮询循环始终在该服务内运行，且不会创建和持有唤醒锁定。</string>
+    <string name="polling_interval_seconds">%1$s 秒</string>
     <string name="millet_no_restrict_description">不受 HyperOS 后台限制的应用列表。</string>
     <string name="millet_no_restrict_empty">列表中没有应用。</string>
     <string name="checking">正在检查…</string>
@@ -69,7 +73,6 @@
     <string name="fcm_diagnostics_unavailable_message">此版本的 Google Play 服务不提供 FCM Diagnostics 页面。</string>
 
     <string name="check_frequency">定期重新应用设置的频率</string>
-    <string name="check_frequency_description">已开启“定期重新应用设置”的应用会按此频率，仅重新应用其已启用管理的 HyperOS 自启动和 AOSP 电池优化设置。选择“关闭”会停用此每应用任务；独立的 15 分钟 Aurogon、自动解除停止和 GMS 恢复任务仍会运行。</string>
     <string name="off">关闭</string>
     <string name="interval_minutes">%1$d 分钟</string>
     <string name="interval_one_hour">1 小时</string>
@@ -111,6 +114,8 @@
     <string name="app_setting_applied_message">已应用 %1$s 的设置。</string>
     <string name="app_setting_failed_message">无法应用 %1$s 的设置：%2$s</string>
     <string name="frequency_changed_message">定期重新应用频率已更改为%1$s。</string>
+    <string name="millet_polling_frequency_changed_message">MILLET 轮询频率已更改为%1$s。</string>
+    <string name="millet_polling_frequency_apply_failed_message">已保存 %1$s 的 MILLET 轮询频率，但无法更新正在运行的 Shizuku 用户服务：%2$s</string>
     <string name="applying_settings_message">正在应用设置…</string>
     <string name="applying_progress">正在应用 %1$d / %2$d</string>
     <string name="settings_applied_message">设置已应用。</string>

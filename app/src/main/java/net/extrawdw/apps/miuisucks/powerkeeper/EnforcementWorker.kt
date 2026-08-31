@@ -49,6 +49,7 @@ class EnforcementWorker(
                 settings.aurogonEnabledPackages,
                 settings.periodicallyEnforcedAppPolicies,
                 targetUserIds,
+                settings.milletPollingIntervalMillis,
                 trigger = "background:periodic-enforcement",
             )
             val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")

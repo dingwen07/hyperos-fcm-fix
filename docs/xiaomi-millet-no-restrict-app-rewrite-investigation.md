@@ -120,22 +120,24 @@ That cadence also means a short quiet capture cannot prove that the entry is
 durable. Conversely, rare rewrites do not justify a slow repair if the first
 freeze decision after a rewrite can occur quickly.
 
-## Why the watchdog uses 2.5 seconds
+## Why the watchdog defaults to 2.5 seconds
 
 The shortest relevant delayed-freeze path found in the examined Greezer code
 was five seconds. A ten-second poll has a worst-case detection delay of nearly
 ten seconds and can lose that race. Once frozen, adding GMS back to the list
 does not itself thaw the existing UID.
 
-The app consequently uses a 2.5-second `scheduleWithFixedDelay` watchdog. The
-delay begins after the previous check finishes, so this is not a hard real-time
-2.5-second clock. In the healthy state the hot path runs only one idempotent
+The app consequently defaults to a 2.5-second `scheduleWithFixedDelay`
+watchdog. The UI also offers 5-, 10-, and 30-second intervals for users who
+accept a longer repair window in exchange for less frequent checks. The delay
+begins after the previous check finishes, so none of these options is a hard
+real-time clock. In the healthy state the hot path runs only one idempotent
 `settings get` for `MILLET_NO_RESTRICT_APP`; it writes and verifies only when
 GMS is absent.
 
 The scheduled executor holds no wake lock. It consumes CPU while the device and
 daemon are runnable, but it does not wake a suspended device merely to meet the
-2.5-second interval.
+selected interval.
 
 ### Screen-on CPU sample
 
@@ -185,7 +187,7 @@ initialization or a relevant Xiaomi cloud-data change. The retained logs
 contained no poll-detected Aurogon overwrite despite many direct app-side
 reconciliations.
 
-The implementation therefore keeps Aurogon out of the 2.5-second hot loop. It
+The implementation therefore keeps Aurogon out of the MILLET polling hot loop. It
 reconciles Aurogon immediately during protection/configuration operations and
 uses the existing 15-minute recovery worker as a safety net. Only the volatile
 GMS membership in `MILLET_NO_RESTRICT_APP` remains in `fcmPolling`.

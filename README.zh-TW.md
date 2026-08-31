@@ -41,7 +41,7 @@ HyperOS FCM Fix 用於解決小米 HyperOS 凍結 Google Play 服務或限制應
 
 ## FCM 保護
 
-這個持久的應用程式套件層級修復會讀取目前的 `MILLET_NO_RESTRICT_APP` 值，僅在缺少 `com.google.android.gms` 時附加該應用程式套件，寫回保留了原有內容的清單，並驗證結果。裝置處於使用中狀態時，長期執行的 Shizuku UserService 每 2.5 秒檢查一次此設定，在已知的延遲凍結路徑通常開始執行前修復 PowerKeeper 的覆寫操作。Aurogon 規則會在保護或設定操作期間立即協調，並由現有的 15 分鐘恢復工作兜底。Java 計時器無法喚醒已暫停的裝置；不過，PowerKeeper 通常會在使用者與其介面互動時重寫此設定。
+這個持久的應用程式套件層級修復會讀取目前的 `MILLET_NO_RESTRICT_APP` 值，僅在缺少 `com.google.android.gms` 時附加該應用程式套件，寫回保留了原有內容的清單，並驗證結果。裝置處於使用中狀態時，長期執行的 Shizuku UserService 預設每 2.5 秒檢查一次此設定；應用程式也提供 5 秒、10 秒和 30 秒間隔。輪詢和修復迴圈始終完全在 UserService 內執行，並在已知的延遲凍結路徑通常開始執行前修復 PowerKeeper 的覆寫操作。Aurogon 規則會在保護或設定操作期間立即協調，並由現有的 15 分鐘恢復工作兜底。Java 計時器無法喚醒已暫停的裝置；不過，PowerKeeper 通常會在使用者與其介面互動時重寫此設定。
 
 服務啟動時還會執行以下縱深防禦命令：
 

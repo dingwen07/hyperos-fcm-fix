@@ -36,6 +36,7 @@ class FcmRecoveryWorker(
         return runCatching {
             val fcmReport = PrivilegedServiceClient.startFcmProtection(
                 settings.aurogonEnabledPackages,
+                settings.milletPollingIntervalMillis,
                 "background:fcm-recovery",
             )
             val unstopReport = if (settings.autoUnstopPackages.isEmpty()) {

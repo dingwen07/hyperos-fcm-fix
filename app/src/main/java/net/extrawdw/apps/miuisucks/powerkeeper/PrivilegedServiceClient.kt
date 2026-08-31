@@ -47,6 +47,7 @@ object PrivilegedServiceClient {
         aurogonPackages: Collection<String>,
         policies: Collection<AppPolicy>,
         targetUserIds: List<Int>,
+        milletPollingIntervalMillis: Long,
         trigger: String,
         onProgress: (suspend (completedApps: Int, totalApps: Int) -> Unit)? = null,
     ): String = coroutineScope {
@@ -65,22 +66,23 @@ object PrivilegedServiceClient {
         }
         try {
             withService("enforce", trigger) { connectedService ->
-            // Full passes never apply per-app AppOps or battery state for a disabled app.
-            // Targeted disable cleanup uses applyAppPolicy() and remains intentionally exempt.
-            val orderedPolicies = policies
-                .filter(AppPolicy::appEnabled)
-                .sortedBy(AppPolicy::packageName)
-            connectedService.enforceBatched(
-                aurogonPackages.distinct().sorted().toTypedArray(),
-                orderedPolicies.map(AppPolicy::packageName).toTypedArray(),
-                orderedPolicies.map(AppPolicy::autostartManaged).toBooleanArray(),
-                orderedPolicies.map(AppPolicy::autostartEnabled).toBooleanArray(),
-                orderedPolicies.map(AppPolicy::dozeManaged).toBooleanArray(),
-                orderedPolicies.map { it.dozePolicy.code }.toIntArray(),
-                targetUserIds.toIntArray(),
-                trigger,
-                progressCallback,
-            )
+                connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
+                // Full passes never apply per-app AppOps or battery state for a disabled app.
+                // Targeted disable cleanup uses applyAppPolicy() and remains intentionally exempt.
+                val orderedPolicies = policies
+                    .filter(AppPolicy::appEnabled)
+                    .sortedBy(AppPolicy::packageName)
+                connectedService.enforceBatched(
+                    aurogonPackages.distinct().sorted().toTypedArray(),
+                    orderedPolicies.map(AppPolicy::packageName).toTypedArray(),
+                    orderedPolicies.map(AppPolicy::autostartManaged).toBooleanArray(),
+                    orderedPolicies.map(AppPolicy::autostartEnabled).toBooleanArray(),
+                    orderedPolicies.map(AppPolicy::dozeManaged).toBooleanArray(),
+                    orderedPolicies.map { it.dozePolicy.code }.toIntArray(),
+                    targetUserIds.toIntArray(),
+                    trigger,
+                    progressCallback,
+                )
             }
         } finally {
             progressUpdates?.close()
@@ -90,9 +92,11 @@ object PrivilegedServiceClient {
 
     suspend fun startFcmProtection(
         aurogonPackages: Collection<String>,
+        milletPollingIntervalMillis: Long,
         trigger: String,
     ): String =
         withService("startFcmProtection", trigger) { connectedService ->
+            connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
             connectedService.startFcmProtection(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
@@ -114,13 +118,23 @@ object PrivilegedServiceClient {
 
     suspend fun reconcileAurogon(
         aurogonPackages: Collection<String>,
+        milletPollingIntervalMillis: Long,
         trigger: String,
     ): String =
         withService("reconcileAurogon", trigger) { connectedService ->
+            connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
             connectedService.reconcileAurogon(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
             )
+        }
+
+    suspend fun configureFcmPolling(
+        intervalMillis: Long,
+        trigger: String,
+    ): String =
+        withService("configureFcmPolling", trigger) { connectedService ->
+            connectedService.configureFcmPolling(intervalMillis, trigger)
         }
 
     suspend fun applyAppPolicy(
@@ -233,5 +247,5 @@ object PrivilegedServiceClient {
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService implementation or AIDL changes so Shizuku replaces the
     // daemon process instead of retaining code loaded from an older APK.
-    private const val USER_SERVICE_VERSION = 14
+    private const val USER_SERVICE_VERSION = 15
 }

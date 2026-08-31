@@ -25,7 +25,10 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private val fcmRepairLock = Any()
     private val aurogonRepairLock = Any()
     private var autostartSwitchOpAvailable: Boolean? = null
+    @Volatile
     private var fcmPolling: ScheduledFuture<*>? = null
+    @Volatile
+    private var fcmPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS
     private val serviceLogLock = Any()
     private val serviceLogTimeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
     private val pendingServiceLogs = ArrayDeque<String>()
@@ -233,7 +236,10 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             appendLine(runGreezerCommand("Restore ordinary GMS allowlist", "LM", "add", MilletNoRestrictList.GMS_PACKAGE))
             appendLine(ensureGmsNoRestrict())
             appendLine(ensureAurogon(desired))
-            append("FCM setting monitor: active ($FCM_POLL_INTERVAL_LABEL Shizuku poll)")
+            append(
+                "FCM setting monitor: active " +
+                    "(${MilletPollingInterval.diagnosticLabel(fcmPollingIntervalMillis)} Shizuku poll)",
+            )
         }
         serviceLog('I', "FCM", "finish trigger=$trigger report=${report.singleLine(2_000)}")
         return report
@@ -381,23 +387,57 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         }
     }
 
-    private fun startFcmPolling() {
-        if (isFcmPollingActive()) return
-        synchronized(this) {
-            if (isFcmPollingActive()) return
-            fcmPolling = fcmExecutor.scheduleWithFixedDelay(
-                {
-                    runCatching { ensureGmsNoRestrict() }
-                        .onSuccess { result -> logMilletRepairResult(result) }
-                        .onFailure { error ->
-                            serviceLog('E', "MILLET", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
-                        }
-                },
-                FCM_POLL_INTERVAL_MILLIS,
-                FCM_POLL_INTERVAL_MILLIS,
-                TimeUnit.MILLISECONDS,
-            )
+    override fun configureFcmPolling(intervalMillis: Long, trigger: String): String {
+        require(MilletPollingInterval.isSupported(intervalMillis)) {
+            "Unsupported MILLET polling interval: $intervalMillis ms"
         }
+        val wasActive: Boolean
+        val changed: Boolean
+        synchronized(this) {
+            wasActive = isFcmPollingActive()
+            changed = fcmPollingIntervalMillis != intervalMillis
+            if (wasActive && changed) {
+                fcmPolling?.cancel(false)
+                fcmPolling = null
+            }
+            fcmPollingIntervalMillis = intervalMillis
+            startFcmPollingLocked()
+        }
+        val label = MilletPollingInterval.diagnosticLabel(intervalMillis)
+        serviceLog(
+            'I',
+            "FCM",
+            "poll configured trigger=$trigger interval=$label changed=$changed wasActive=$wasActive",
+        )
+        return "FCM setting monitor: active ($label Shizuku poll)"
+    }
+
+    private fun startFcmPolling() {
+        synchronized(this) {
+            startFcmPollingLocked()
+        }
+    }
+
+    private fun startFcmPollingLocked() {
+        if (isFcmPollingActive()) return
+        val intervalMillis = fcmPollingIntervalMillis
+        fcmPolling = fcmExecutor.scheduleWithFixedDelay(
+            {
+                runCatching { ensureGmsNoRestrict() }
+                    .onSuccess { result -> logMilletRepairResult(result) }
+                    .onFailure { error ->
+                        serviceLog('E', "MILLET", "repair poll crashed: ${error.stackTraceToString().take(4_000)}")
+                    }
+            },
+            intervalMillis,
+            intervalMillis,
+            TimeUnit.MILLISECONDS,
+        )
+        serviceLog(
+            'I',
+            "FCM",
+            "poll started interval=${MilletPollingInterval.diagnosticLabel(intervalMillis)}",
+        )
     }
 
     private fun isFcmPollingActive(): Boolean =
@@ -720,12 +760,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val SETTINGS_COMMAND_TIMEOUT_SECONDS = 10L
         private const val GREEZER_COMMAND_TIMEOUT_SECONDS = 20L
         private const val USER_LIST_COMMAND_TIMEOUT_SECONDS = 10L
-        // PowerKeeper can regenerate this setting from several asynchronous policy paths. Greezer's
-        // shortest observed delayed-freeze path is 5 seconds, so a 2.5-second watchdog retains a
-        // nominal 2.5-second response margin. This scheduled task has no wake lock and therefore
-        // does not wake a suspended device.
-        private const val FCM_POLL_INTERVAL_MILLIS = 2_500L
-        private const val FCM_POLL_INTERVAL_LABEL = "2.5s"
         private const val MAX_OUTPUT_LENGTH = 64_000
         private const val MAX_PACKAGE_LIST_OUTPUT_LENGTH = 512_000
         private const val MAX_PENDING_LOG_CHARS = 128_000

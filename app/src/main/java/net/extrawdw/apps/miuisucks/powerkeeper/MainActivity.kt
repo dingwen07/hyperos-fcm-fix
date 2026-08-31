@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,9 +27,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -38,6 +40,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +55,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +99,7 @@ data class GuardUiState(
     val settings: GuardSettings = GuardSettings(
         appPolicies = AppPolicyDefaults.initialPolicies(),
         intervalMinutes = GuardSettingsStore.DEFAULT_INTERVAL_MINUTES,
+        milletPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS,
         androidUsers = emptyList(),
     ),
     val installedApps: List<InstalledFcmApp>? = null,
@@ -177,6 +184,7 @@ class MainActivity : ComponentActivity() {
                         onRefreshAndroidUsers = { refreshAndroidUsers() },
                         onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                         onCheckMilletValue = ::checkMilletValue,
+                        onMilletPollingIntervalSelected = ::setMilletPollingInterval,
                         onOpenFcmDiagnostics = ::openFcmDiagnostics,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
@@ -373,6 +381,7 @@ class MainActivity : ComponentActivity() {
                 appendLine(
                     PrivilegedServiceClient.reconcileAurogon(
                         settings.aurogonEnabledPackages,
+                        settings.milletPollingIntervalMillis,
                         TRIGGER_UI_APP_CHANGE,
                     ),
                 )
@@ -401,6 +410,7 @@ class MainActivity : ComponentActivity() {
         runAppSettingAction(packageName, "aurogon") {
             PrivilegedServiceClient.reconcileAurogon(
                 settings.aurogonEnabledPackages,
+                settings.milletPollingIntervalMillis,
                 TRIGGER_UI_APP_CHANGE,
             )
         }
@@ -559,6 +569,35 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun setMilletPollingInterval(intervalMillis: Long) {
+        val normalizedIntervalMillis = MilletPollingInterval.normalize(intervalMillis)
+        settingsStore.setMilletPollingIntervalMillis(normalizedIntervalMillis)
+        val formattedInterval = formatMilletPollingInterval(normalizedIntervalMillis)
+        refreshState(
+            getString(R.string.millet_polling_frequency_changed_message, formattedInterval),
+            messageIsError = false,
+        )
+        if (!uiState.shizuku.granted) return
+
+        lifecycleScope.launch {
+            runCatching {
+                PrivilegedServiceClient.configureFcmPolling(
+                    normalizedIntervalMillis,
+                    TRIGGER_UI_MILLET_POLLING_INTERVAL,
+                )
+            }.onFailure { error ->
+                uiState = uiState.copy(
+                    message = getString(
+                        R.string.millet_polling_frequency_apply_failed_message,
+                        formattedInterval,
+                        error.uiFailureMessage(),
+                    ),
+                    messageIsError = true,
+                )
+            }
+        }
+    }
+
     private fun maybeApplyStaleSettings() {
         if (!uiState.shizuku.granted || uiState.applying) return
         if (!GuardSettingsStore.isPeriodicEnforcementEnabled(uiState.settings.intervalMinutes)) return
@@ -579,6 +618,7 @@ class MainActivity : ComponentActivity() {
                     settings.aurogonEnabledPackages,
                     settings.periodicallyEnforcedAppPolicies,
                     settingsStore.loadEnabledAndroidUserIds(),
+                    settings.milletPollingIntervalMillis,
                     TRIGGER_UI_STALE_PERIODIC,
                 )
             }.onSuccess { report ->
@@ -626,6 +666,7 @@ class MainActivity : ComponentActivity() {
                     settings.aurogonEnabledPackages,
                     settings.enabledAppPolicies,
                     targetUserIds,
+                    settings.milletPollingIntervalMillis,
                     TRIGGER_UI_APPLY,
                     onProgress = { completed, total ->
                         uiState = uiState.copy(applyProgress = ApplyProgress(completed, total))
@@ -784,6 +825,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun formatMilletPollingInterval(intervalMillis: Long): String = getString(
+        R.string.polling_interval_seconds,
+        MilletPollingInterval.secondsLabel(intervalMillis),
+    )
+
     companion object {
         private const val SHIZUKU_PERMISSION_REQUEST = 42
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
@@ -792,6 +838,7 @@ class MainActivity : ComponentActivity() {
         private const val TRIGGER_UI_APPLY = "ui:apply"
         private const val TRIGGER_UI_USERS = "ui:user-list"
         private const val TRIGGER_UI_MILLET = "ui:millet-check"
+        private const val TRIGGER_UI_MILLET_POLLING_INTERVAL = "ui:millet-polling-interval"
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
         private const val TRIGGER_UI_APP_CHANGE = "ui:app-change"
         private const val TRIGGER_UI_STALE_PERIODIC = "ui:stale-periodic"
@@ -826,6 +873,7 @@ private fun GuardApp(
     onRefreshAndroidUsers: () -> Unit,
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
+    onMilletPollingIntervalSelected: (Long) -> Unit,
     onOpenFcmDiagnostics: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
@@ -904,7 +952,13 @@ private fun GuardApp(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
-                item { ProtectionCard(state = state, onApplyNow = onApplyNow) }
+                item {
+                    ProtectionCard(
+                        state = state,
+                        onIntervalSelected = onIntervalSelected,
+                        onApplyNow = onApplyNow,
+                    )
+                }
                 item {
                     AndroidUsersCard(
                         state = state,
@@ -916,12 +970,7 @@ private fun GuardApp(
                     MilletNoRestrictCard(
                         state = state,
                         onCheckValue = onCheckMilletValue,
-                    )
-                }
-                item {
-                    IntervalCard(
-                        selectedMinutes = state.settings.intervalMinutes,
-                        onIntervalSelected = onIntervalSelected,
+                        onPollingIntervalSelected = onMilletPollingIntervalSelected,
                     )
                 }
                 state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
@@ -1033,7 +1082,11 @@ private fun ShizukuCard(
 }
 
 @Composable
-private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
+private fun ProtectionCard(
+    state: GuardUiState,
+    onIntervalSelected: (Long) -> Unit,
+    onApplyNow: () -> Unit,
+) {
     val policies = state.settings.enabledAppPolicies
     val statusText = stringResource(
         R.string.protection_summary,
@@ -1064,6 +1117,10 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
                     color = if (state.messageIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 )
             }
+            PeriodicEnforcementFrequencyRow(
+                selectedMinutes = state.settings.intervalMinutes,
+                onIntervalSelected = onIntervalSelected,
+            )
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onApplyNow,
@@ -1085,6 +1142,61 @@ private fun ProtectionCard(state: GuardUiState, onApplyNow: () -> Unit) {
                     }
                 } else {
                     Text(stringResource(R.string.apply_now))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PeriodicEnforcementFrequencyRow(
+    selectedMinutes: Long,
+    onIntervalSelected: (Long) -> Unit,
+) {
+    val options = remember {
+        listOf(GuardSettingsStore.DISABLED_INTERVAL_MINUTES, 15L, 60L, 180L, 360L)
+    }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.check_frequency),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box {
+            TextButton(onClick = { expanded = true }) {
+                Text(formatInterval(selectedMinutes), maxLines = 1)
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = null,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                options.forEach { minutes ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                formatInterval(minutes),
+                                fontWeight = if (minutes == selectedMinutes) {
+                                    FontWeight.SemiBold
+                                } else {
+                                    FontWeight.Normal
+                                },
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            if (minutes != selectedMinutes) onIntervalSelected(minutes)
+                        },
+                    )
                 }
             }
         }
@@ -1162,10 +1274,12 @@ private fun AndroidUsersCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MilletNoRestrictCard(
     state: GuardUiState,
     onCheckValue: () -> Unit,
+    onPollingIntervalSelected: (Long) -> Unit,
 ) {
     val rawValue = state.milletNoRestrictValue
     val readFailed = rawValue?.startsWith("FAILED:") == true
@@ -1195,15 +1309,49 @@ private fun MilletNoRestrictCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                MilletNoRestrictList.SETTING_NAME,
+                stringResource(R.string.google_play_services_protection),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            Text(
+                stringResource(R.string.millet_polling_frequency),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                MilletPollingInterval.OPTIONS_MILLIS.forEachIndexed { index, intervalMillis ->
+                    SegmentedButton(
+                        selected = state.settings.milletPollingIntervalMillis == intervalMillis,
+                        onClick = {
+                            if (state.settings.milletPollingIntervalMillis != intervalMillis) {
+                                onPollingIntervalSelected(intervalMillis)
+                            }
+                        },
+                        enabled = !state.applying,
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index,
+                            MilletPollingInterval.OPTIONS_MILLIS.size,
+                        ),
+                    ) {
+                        Text(formatMilletPollingInterval(intervalMillis), maxLines = 1)
+                    }
+                }
+            }
+            Text(
+                stringResource(R.string.millet_polling_frequency_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
             Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor)
             Text(
                 stringResource(R.string.millet_no_restrict_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                MilletNoRestrictList.SETTING_NAME,
+                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+                fontWeight = FontWeight.SemiBold,
             )
             if (rawValue != null && !readFailed) {
                 if (packages.isEmpty()) {
@@ -1254,48 +1402,6 @@ private fun MilletNoRestrictCard(
                     ),
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun IntervalCard(
-    selectedMinutes: Long,
-    onIntervalSelected: (Long) -> Unit,
-) {
-    val options = remember {
-        listOf(GuardSettingsStore.DISABLED_INTERVAL_MINUTES, 15L, 60L, 180L, 360L)
-    }
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                stringResource(R.string.check_frequency),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            options.chunked(2).forEach { rowOptions ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    rowOptions.forEach { minutes ->
-                        FilterChip(
-                            modifier = Modifier.weight(1f),
-                            selected = selectedMinutes == minutes,
-                            onClick = { onIntervalSelected(minutes) },
-                            label = { Text(formatInterval(minutes)) },
-                        )
-                    }
-                }
-            }
-            Text(
-                stringResource(R.string.check_frequency_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -1384,3 +1490,9 @@ private fun formatInterval(minutes: Long): String = when (minutes) {
         minutes / 60L,
     )
 }
+
+@Composable
+private fun formatMilletPollingInterval(intervalMillis: Long): String = stringResource(
+    R.string.polling_interval_seconds,
+    MilletPollingInterval.secondsLabel(intervalMillis),
+)

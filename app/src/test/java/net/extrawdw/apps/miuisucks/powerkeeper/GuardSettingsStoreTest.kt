@@ -193,6 +193,7 @@ class GuardSettingsStoreTest {
             appPolicies = listOf(enabledPeriodic, enabledManualOnly, disabledPeriodic)
                 .associateBy(AppPolicy::packageName),
             intervalMinutes = GuardSettingsStore.MINIMUM_INTERVAL_MINUTES,
+            milletPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS,
             androidUsers = emptyList(),
         )
 

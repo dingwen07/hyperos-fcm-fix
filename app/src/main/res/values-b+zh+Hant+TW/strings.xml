@@ -58,10 +58,14 @@
     <string name="app_doze_restricted_description">限制背景 AppOps。通知與背景工作可能會延遲。</string>
 
     <string name="google_play_services">Google Play 服務</string>
+    <string name="google_play_services_protection">Google Play 服務保護</string>
     <string name="gms_status_not_checked">尚未檢查狀態</string>
     <string name="gms_status_unavailable">無法取得狀態</string>
     <string name="gms_status_protected">保護作用中</string>
     <string name="gms_status_needs_attention">需要注意</string>
+    <string name="millet_polling_frequency">輪詢頻率</string>
+    <string name="millet_polling_frequency_description">Shizuku 使用者服務會依此頻率檢查並修復這項設定。輪詢迴圈始終在該服務內執行，且不會建立及保留喚醒鎖定。</string>
+    <string name="polling_interval_seconds">%1$s 秒</string>
     <string name="millet_no_restrict_description">應免受 HyperOS 限制的套件。</string>
     <string name="millet_no_restrict_empty">清單中沒有套件。</string>
     <string name="checking">檢查中…</string>
@@ -70,7 +74,6 @@
     <string name="fcm_diagnostics_unavailable_message">此版本的 Google Play 服務不提供 FCM Diagnostics 頁面。</string>
 
     <string name="check_frequency">週期性套用頻率</string>
-    <string name="check_frequency_description">已啟用週期性套用的應用程式會依此頻率，只還原其受管理的 HyperOS 自動啟動與 AOSP 電池最佳化設定。關閉會停用這項應用程式層級工作；獨立的 15 分鐘 Aurogon、自動解除停止與 GMS 復原工作仍會排程執行。</string>
     <string name="off">關閉</string>
     <string name="interval_minutes">%1$d 分鐘</string>
     <string name="interval_one_hour">1 小時</string>
@@ -113,6 +116,8 @@
     <string name="app_setting_applied_message">%1$s 設定已套用。</string>
     <string name="app_setting_failed_message">無法套用 %1$s 設定：%2$s</string>
     <string name="frequency_changed_message">檢查頻率已變更為 %1$s。</string>
+    <string name="millet_polling_frequency_changed_message">MILLET 輪詢頻率已變更為 %1$s。</string>
+    <string name="millet_polling_frequency_apply_failed_message">已儲存 %1$s 的 MILLET 輪詢頻率，但無法更新執行中的 Shizuku 使用者服務：%2$s</string>
     <string name="applying_settings_message">正在套用設定…</string>
     <string name="applying_progress">正在套用 %1$d / %2$d</string>
     <string name="settings_applied_message">設定已套用。</string>

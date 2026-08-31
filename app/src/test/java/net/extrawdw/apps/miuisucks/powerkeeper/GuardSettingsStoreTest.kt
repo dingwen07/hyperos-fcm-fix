@@ -29,6 +29,11 @@ class GuardSettingsStoreTest {
     }
 
     @Test
+    fun fcmReconnectDefaultsEnabled() {
+        assertTrue(GuardSettingsStore.DEFAULT_FCM_RECONNECT_ENABLED)
+    }
+
+    @Test
     fun appPolicyCodecPreservesIndependentControls() {
         val policy = AppPolicy(
             packageName = "com.example.push",
@@ -194,6 +199,7 @@ class GuardSettingsStoreTest {
                 .associateBy(AppPolicy::packageName),
             intervalMinutes = GuardSettingsStore.MINIMUM_INTERVAL_MINUTES,
             milletPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS,
+            fcmReconnectEnabled = GuardSettingsStore.DEFAULT_FCM_RECONNECT_ENABLED,
             androidUsers = emptyList(),
         )
 

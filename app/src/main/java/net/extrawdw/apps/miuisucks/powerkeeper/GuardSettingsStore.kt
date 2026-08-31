@@ -7,6 +7,7 @@ data class GuardSettings(
     val appPolicies: Map<String, AppPolicy>,
     val intervalMinutes: Long,
     val milletPollingIntervalMillis: Long,
+    val fcmReconnectEnabled: Boolean,
     val androidUsers: List<AndroidUserSelection>,
 ) {
     fun policyFor(packageName: String): AppPolicy =
@@ -52,6 +53,10 @@ class GuardSettingsStore(context: Context) {
                 KEY_MILLET_POLLING_INTERVAL_MILLIS,
                 MilletPollingInterval.DEFAULT_MILLIS,
             ),
+        ),
+        fcmReconnectEnabled = preferences.getBoolean(
+            KEY_FCM_RECONNECT_ENABLED,
+            DEFAULT_FCM_RECONNECT_ENABLED,
         ),
         androidUsers = loadAndroidUsers(),
     )
@@ -132,6 +137,10 @@ class GuardSettingsStore(context: Context) {
         }
     }
 
+    fun setFcmReconnectEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_FCM_RECONNECT_ENABLED, enabled) }
+    }
+
     fun loadAndroidUsers(): List<AndroidUserSelection> = AndroidUserSelections.decode(
         preferences.getString(KEY_ANDROID_USERS, null),
     )
@@ -202,6 +211,7 @@ class GuardSettingsStore(context: Context) {
         const val DISABLED_INTERVAL_MINUTES = 0L
         const val MINIMUM_INTERVAL_MINUTES = 15L
         const val DEFAULT_INTERVAL_MINUTES = 60L
+        const val DEFAULT_FCM_RECONNECT_ENABLED = true
 
         fun isPeriodicEnforcementEnabled(intervalMinutes: Long): Boolean =
             intervalMinutes > DISABLED_INTERVAL_MINUTES
@@ -217,6 +227,7 @@ class GuardSettingsStore(context: Context) {
         private const val KEY_APP_POLICIES = "app_policies"
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
         private const val KEY_MILLET_POLLING_INTERVAL_MILLIS = "millet_polling_interval_millis"
+        private const val KEY_FCM_RECONNECT_ENABLED = "fcm_reconnect_enabled"
         private const val KEY_ANDROID_USERS = "android_users"
         private const val KEY_LAST_RUN_TIMESTAMP = "last_run_timestamp"
         private const val KEY_LAST_RUN_SUCCEEDED = "last_run_succeeded"

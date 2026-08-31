@@ -48,6 +48,7 @@ object PrivilegedServiceClient {
         policies: Collection<AppPolicy>,
         targetUserIds: List<Int>,
         milletPollingIntervalMillis: Long,
+        fcmReconnectEnabled: Boolean,
         trigger: String,
         onProgress: (suspend (completedApps: Int, totalApps: Int) -> Unit)? = null,
     ): String = coroutineScope {
@@ -66,7 +67,11 @@ object PrivilegedServiceClient {
         }
         try {
             withService("enforce", trigger) { connectedService ->
-                connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
+                connectedService.configureFcmPolling(
+                    milletPollingIntervalMillis,
+                    fcmReconnectEnabled,
+                    trigger,
+                )
                 // Full passes never apply per-app AppOps or battery state for a disabled app.
                 // Targeted disable cleanup uses applyAppPolicy() and remains intentionally exempt.
                 val orderedPolicies = policies
@@ -93,10 +98,15 @@ object PrivilegedServiceClient {
     suspend fun startFcmProtection(
         aurogonPackages: Collection<String>,
         milletPollingIntervalMillis: Long,
+        fcmReconnectEnabled: Boolean,
         trigger: String,
     ): String =
         withService("startFcmProtection", trigger) { connectedService ->
-            connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
+            connectedService.configureFcmPolling(
+                milletPollingIntervalMillis,
+                fcmReconnectEnabled,
+                trigger,
+            )
             connectedService.startFcmProtection(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
@@ -119,10 +129,15 @@ object PrivilegedServiceClient {
     suspend fun reconcileAurogon(
         aurogonPackages: Collection<String>,
         milletPollingIntervalMillis: Long,
+        fcmReconnectEnabled: Boolean,
         trigger: String,
     ): String =
         withService("reconcileAurogon", trigger) { connectedService ->
-            connectedService.configureFcmPolling(milletPollingIntervalMillis, trigger)
+            connectedService.configureFcmPolling(
+                milletPollingIntervalMillis,
+                fcmReconnectEnabled,
+                trigger,
+            )
             connectedService.reconcileAurogon(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
@@ -131,10 +146,11 @@ object PrivilegedServiceClient {
 
     suspend fun configureFcmPolling(
         intervalMillis: Long,
+        fcmReconnectEnabled: Boolean,
         trigger: String,
     ): String =
         withService("configureFcmPolling", trigger) { connectedService ->
-            connectedService.configureFcmPolling(intervalMillis, trigger)
+            connectedService.configureFcmPolling(intervalMillis, fcmReconnectEnabled, trigger)
         }
 
     suspend fun applyAppPolicy(
@@ -247,5 +263,5 @@ object PrivilegedServiceClient {
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService implementation or AIDL changes so Shizuku replaces the
     // daemon process instead of retaining code loaded from an older APK.
-    private const val USER_SERVICE_VERSION = 15
+    private const val USER_SERVICE_VERSION = 16
 }

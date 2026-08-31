@@ -50,6 +50,7 @@ class EnforcementWorker(
                 settings.periodicallyEnforcedAppPolicies,
                 targetUserIds,
                 settings.milletPollingIntervalMillis,
+                settings.fcmReconnectEnabled,
                 trigger = "background:periodic-enforcement",
             )
             val succeeded = !report.contains("FAILED:") && !report.contains("exit_code=")

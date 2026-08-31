@@ -64,9 +64,11 @@
     <string name="gms_status_protected">Protection active</string>
     <string name="gms_status_needs_attention">Needs attention</string>
     <string name="millet_polling_frequency">Polling frequency</string>
-    <string name="millet_polling_frequency_description">How often the Shizuku User Service checks and repairs this setting. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
+    <string name="millet_polling_frequency_description">How often the Shizuku User Service checks and repairs this setting and, when enabled, checks the FCM connection. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
+    <string name="fcm_reconnect_protection">FCM Connection Protection</string>
+    <string name="fcm_reconnect_protection_description">Checks the FCM connection and asks Google Play services to reconnect when needed.</string>
     <string name="polling_interval_seconds">%1$ss</string>
-    <string name="millet_no_restrict_description">Packages that HyperOS should leave unrestricted.</string>
+    <string name="millet_no_restrict_description">Apps currently exempt from HyperOS background restrictions.</string>
     <string name="millet_no_restrict_empty">No packages in the list.</string>
     <string name="checking">Checking…</string>
     <string name="refresh_status">Refresh status</string>
@@ -116,8 +118,11 @@
     <string name="app_setting_applied_message">%1$s setting applied.</string>
     <string name="app_setting_failed_message">Could not apply %1$s setting: %2$s</string>
     <string name="frequency_changed_message">Check frequency changed to %1$s.</string>
-    <string name="millet_polling_frequency_changed_message">MILLET polling frequency changed to %1$s.</string>
-    <string name="millet_polling_frequency_apply_failed_message">Saved the %1$s MILLET polling frequency, but could not update the running Shizuku service: %2$s</string>
+    <string name="millet_polling_frequency_changed_message">Protection polling frequency changed to %1$s.</string>
+    <string name="millet_polling_frequency_apply_failed_message">Saved the %1$s protection polling frequency, but could not update the running Shizuku service: %2$s</string>
+    <string name="fcm_reconnect_enabled_message">FCM Connection Protection enabled.</string>
+    <string name="fcm_reconnect_disabled_message">FCM Connection Protection disabled.</string>
+    <string name="fcm_reconnect_apply_failed_message">Saved FCM Connection Protection, but could not update the running Shizuku service: %1$s</string>
     <string name="applying_settings_message">Applying settings…</string>
     <string name="applying_progress">Applying %1$d / %2$d</string>
     <string name="settings_applied_message">Settings applied.</string>

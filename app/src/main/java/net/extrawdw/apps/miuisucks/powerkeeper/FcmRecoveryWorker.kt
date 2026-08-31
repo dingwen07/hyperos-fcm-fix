@@ -37,6 +37,7 @@ class FcmRecoveryWorker(
             val fcmReport = PrivilegedServiceClient.startFcmProtection(
                 settings.aurogonEnabledPackages,
                 settings.milletPollingIntervalMillis,
+                settings.fcmReconnectEnabled,
                 "background:fcm-recovery",
             )
             val unstopReport = if (settings.autoUnstopPackages.isEmpty()) {

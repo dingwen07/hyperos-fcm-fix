@@ -64,9 +64,11 @@
     <string name="gms_status_protected">保护已启用</string>
     <string name="gms_status_needs_attention">需要处理</string>
     <string name="millet_polling_frequency">轮询频率</string>
-    <string name="millet_polling_frequency_description">Shizuku 用户服务按此频率检查并修复此设置。轮询循环始终在该服务内运行，且不会创建和持有唤醒锁定。</string>
+    <string name="millet_polling_frequency_description">Shizuku 用户服务按此频率检查并修复此设置，并在启用时检查 FCM 连接。轮询循环始终在该服务内运行，且不会创建和持有唤醒锁定。</string>
+    <string name="fcm_reconnect_protection">FCM 连接保护</string>
+    <string name="fcm_reconnect_protection_description">检查 FCM 连接，并在需要时请求 Google Play 服务重新连接。</string>
     <string name="polling_interval_seconds">%1$s 秒</string>
-    <string name="millet_no_restrict_description">不受 HyperOS 后台限制的应用列表。</string>
+    <string name="millet_no_restrict_description">当前不受 HyperOS 后台限制的应用列表。</string>
     <string name="millet_no_restrict_empty">列表中没有应用。</string>
     <string name="checking">正在检查…</string>
     <string name="refresh_status">刷新状态</string>
@@ -114,8 +116,11 @@
     <string name="app_setting_applied_message">已应用 %1$s 的设置。</string>
     <string name="app_setting_failed_message">无法应用 %1$s 的设置：%2$s</string>
     <string name="frequency_changed_message">定期重新应用频率已更改为%1$s。</string>
-    <string name="millet_polling_frequency_changed_message">MILLET 轮询频率已更改为%1$s。</string>
-    <string name="millet_polling_frequency_apply_failed_message">已保存 %1$s 的 MILLET 轮询频率，但无法更新正在运行的 Shizuku 用户服务：%2$s</string>
+    <string name="millet_polling_frequency_changed_message">保护轮询频率已更改为 %1$s。</string>
+    <string name="millet_polling_frequency_apply_failed_message">已保存 %1$s 的保护轮询频率，但无法更新正在运行的 Shizuku 用户服务：%2$s</string>
+    <string name="fcm_reconnect_enabled_message">已启用 FCM 连接保护。</string>
+    <string name="fcm_reconnect_disabled_message">已停用 FCM 连接保护。</string>
+    <string name="fcm_reconnect_apply_failed_message">已保存 FCM 连接保护设置，但无法更新正在运行的 Shizuku 用户服务：%1$s</string>
     <string name="applying_settings_message">正在应用设置…</string>
     <string name="applying_progress">正在应用 %1$d / %2$d</string>
     <string name="settings_applied_message">设置已应用。</string>

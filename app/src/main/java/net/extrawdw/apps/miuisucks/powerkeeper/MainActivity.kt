@@ -100,6 +100,7 @@ data class GuardUiState(
         appPolicies = AppPolicyDefaults.initialPolicies(),
         intervalMinutes = GuardSettingsStore.DEFAULT_INTERVAL_MINUTES,
         milletPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS,
+        fcmReconnectEnabled = GuardSettingsStore.DEFAULT_FCM_RECONNECT_ENABLED,
         androidUsers = emptyList(),
     ),
     val installedApps: List<InstalledFcmApp>? = null,
@@ -185,6 +186,7 @@ class MainActivity : ComponentActivity() {
                         onAndroidUserEnabledChanged = ::setAndroidUserEnabled,
                         onCheckMilletValue = ::checkMilletValue,
                         onMilletPollingIntervalSelected = ::setMilletPollingInterval,
+                        onFcmReconnectEnabledChanged = ::setFcmReconnectEnabled,
                         onOpenFcmDiagnostics = ::openFcmDiagnostics,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
@@ -382,6 +384,7 @@ class MainActivity : ComponentActivity() {
                     PrivilegedServiceClient.reconcileAurogon(
                         settings.aurogonEnabledPackages,
                         settings.milletPollingIntervalMillis,
+                        settings.fcmReconnectEnabled,
                         TRIGGER_UI_APP_CHANGE,
                     ),
                 )
@@ -411,6 +414,7 @@ class MainActivity : ComponentActivity() {
             PrivilegedServiceClient.reconcileAurogon(
                 settings.aurogonEnabledPackages,
                 settings.milletPollingIntervalMillis,
+                settings.fcmReconnectEnabled,
                 TRIGGER_UI_APP_CHANGE,
             )
         }
@@ -583,6 +587,7 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 PrivilegedServiceClient.configureFcmPolling(
                     normalizedIntervalMillis,
+                    uiState.settings.fcmReconnectEnabled,
                     TRIGGER_UI_MILLET_POLLING_INTERVAL,
                 )
             }.onFailure { error ->
@@ -590,6 +595,35 @@ class MainActivity : ComponentActivity() {
                     message = getString(
                         R.string.millet_polling_frequency_apply_failed_message,
                         formattedInterval,
+                        error.uiFailureMessage(),
+                    ),
+                    messageIsError = true,
+                )
+            }
+        }
+    }
+
+    private fun setFcmReconnectEnabled(enabled: Boolean) {
+        settingsStore.setFcmReconnectEnabled(enabled)
+        refreshState(
+            getString(
+                if (enabled) R.string.fcm_reconnect_enabled_message else R.string.fcm_reconnect_disabled_message,
+            ),
+            messageIsError = false,
+        )
+        if (!uiState.shizuku.granted) return
+
+        lifecycleScope.launch {
+            runCatching {
+                PrivilegedServiceClient.configureFcmPolling(
+                    uiState.settings.milletPollingIntervalMillis,
+                    enabled,
+                    TRIGGER_UI_FCM_RECONNECT,
+                )
+            }.onFailure { error ->
+                uiState = uiState.copy(
+                    message = getString(
+                        R.string.fcm_reconnect_apply_failed_message,
                         error.uiFailureMessage(),
                     ),
                     messageIsError = true,
@@ -619,6 +653,7 @@ class MainActivity : ComponentActivity() {
                     settings.periodicallyEnforcedAppPolicies,
                     settingsStore.loadEnabledAndroidUserIds(),
                     settings.milletPollingIntervalMillis,
+                    settings.fcmReconnectEnabled,
                     TRIGGER_UI_STALE_PERIODIC,
                 )
             }.onSuccess { report ->
@@ -667,6 +702,7 @@ class MainActivity : ComponentActivity() {
                     settings.enabledAppPolicies,
                     targetUserIds,
                     settings.milletPollingIntervalMillis,
+                    settings.fcmReconnectEnabled,
                     TRIGGER_UI_APPLY,
                     onProgress = { completed, total ->
                         uiState = uiState.copy(applyProgress = ApplyProgress(completed, total))
@@ -839,6 +875,7 @@ class MainActivity : ComponentActivity() {
         private const val TRIGGER_UI_USERS = "ui:user-list"
         private const val TRIGGER_UI_MILLET = "ui:millet-check"
         private const val TRIGGER_UI_MILLET_POLLING_INTERVAL = "ui:millet-polling-interval"
+        private const val TRIGGER_UI_FCM_RECONNECT = "ui:fcm-reconnect"
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
         private const val TRIGGER_UI_APP_CHANGE = "ui:app-change"
         private const val TRIGGER_UI_STALE_PERIODIC = "ui:stale-periodic"
@@ -874,6 +911,7 @@ private fun GuardApp(
     onAndroidUserEnabledChanged: (Int, Boolean) -> Unit,
     onCheckMilletValue: () -> Unit,
     onMilletPollingIntervalSelected: (Long) -> Unit,
+    onFcmReconnectEnabledChanged: (Boolean) -> Unit,
     onOpenFcmDiagnostics: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
@@ -971,6 +1009,7 @@ private fun GuardApp(
                         state = state,
                         onCheckValue = onCheckMilletValue,
                         onPollingIntervalSelected = onMilletPollingIntervalSelected,
+                        onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
                     )
                 }
                 state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
@@ -1280,6 +1319,7 @@ private fun MilletNoRestrictCard(
     state: GuardUiState,
     onCheckValue: () -> Unit,
     onPollingIntervalSelected: (Long) -> Unit,
+    onFcmReconnectEnabledChanged: (Boolean) -> Unit,
 ) {
     val rawValue = state.milletNoRestrictValue
     val readFailed = rawValue?.startsWith("FAILED:") == true
@@ -1341,17 +1381,42 @@ private fun MilletNoRestrictCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.fcm_reconnect_protection),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        stringResource(R.string.fcm_reconnect_protection_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.settings.fcmReconnectEnabled,
+                    onCheckedChange = onFcmReconnectEnabledChanged,
+                    enabled = !state.applying,
+                )
+            }
             Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor)
-            Text(
-                stringResource(R.string.millet_no_restrict_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            HorizontalDivider()
             Text(
                 MilletNoRestrictList.SETTING_NAME,
                 style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
                 fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.millet_no_restrict_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (rawValue != null && !readFailed) {
                 if (packages.isEmpty()) {

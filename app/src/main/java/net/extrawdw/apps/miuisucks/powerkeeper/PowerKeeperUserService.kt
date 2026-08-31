@@ -14,7 +14,6 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
 class PowerKeeperUserService : IPrivilegedService.Stub {
@@ -23,6 +22,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private val fcmExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "fcm-protection").apply { isDaemon = true }
     }
+    private val systemCommands = SystemServiceCommandRunner()
     private val fcmRepairLock = Any()
     private val aurogonRepairLock = Any()
     private var autostartSwitchOpAvailable: Boolean? = null
@@ -87,6 +87,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         )
         val batches = EnforcementBatching.split(policies)
         val targetUsers = targetUserIds.distinct().sorted()
+        require(targetUsers.all { it >= 0 }) { "Invalid Android user ID" }
         val includeAutostartSwitchOp = isAutostartSwitchOpAvailable()
         serviceLog(
             'I',
@@ -101,13 +102,15 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                 appendLine(installedSnapshot.report)
                 if (batches.isEmpty()) {
                     append(
-                        runScript(
-                            EnforcementScript.build(
-                                policies = emptyList(),
-                                applicationId = BuildConfig.APPLICATION_ID,
-                                targetUsers = targetUsers,
-                                includeAutostartSwitchOp = includeAutostartSwitchOp,
-                            ),
+                        enforcePolicyBatch(
+                            policies = emptyList(),
+                            targetUsers = targetUsers,
+                            installedPackagesByUser = installedSnapshot.packagesByUser,
+                            includeSelfProtection = true,
+                            includeWriteSettings = true,
+                            includeAutostartSwitchOp = includeAutostartSwitchOp,
+                            progressStartIndex = 0,
+                            onProgress = null,
                         ),
                     )
                 } else {
@@ -115,17 +118,14 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                     batches.forEachIndexed { index, batch ->
                         appendLine("Policy batch ${index + 1}/${batches.size} (${batch.size} apps)")
                         appendLine(
-                            runScript(
-                                EnforcementScript.build(
-                                    policies = batch,
-                                    applicationId = BuildConfig.APPLICATION_ID,
-                                    targetUsers = targetUsers,
-                                    includeSelfProtection = index == 0,
-                                    includeWriteSettings = index == batches.lastIndex,
-                                    installedPackagesByUser = installedSnapshot.packagesByUser,
-                                    progressStartIndex = completed,
-                                    includeAutostartSwitchOp = includeAutostartSwitchOp,
-                                ),
+                            enforcePolicyBatch(
+                                policies = batch,
+                                targetUsers = targetUsers,
+                                installedPackagesByUser = installedSnapshot.packagesByUser,
+                                includeSelfProtection = index == 0,
+                                includeWriteSettings = index == batches.lastIndex,
+                                includeAutostartSwitchOp = includeAutostartSwitchOp,
+                                progressStartIndex = completed,
                                 onProgress = { processed ->
                                     notifyProgress(progressCallback, processed, policies.size)
                                 },
@@ -147,6 +147,67 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         }.onFailure { error ->
             serviceLog('E', "Enforce", "failed trigger=$trigger error=${error.stackTraceToString().take(4_000)}")
         }.getOrThrow()
+    }
+
+    private fun enforcePolicyBatch(
+        policies: List<AppPolicy>,
+        targetUsers: List<Int>,
+        installedPackagesByUser: Map<Int, Set<String>>,
+        includeSelfProtection: Boolean,
+        includeWriteSettings: Boolean,
+        includeAutostartSwitchOp: Boolean,
+        progressStartIndex: Int,
+        onProgress: ((Int) -> Unit)?,
+    ): String {
+        val startedAt = System.nanoTime()
+        val report = CommandReport("Per-app battery policy enforcement")
+        report.line("shell_uid=${Process.myUid()} configured_apps=${policies.size}")
+        if (targetUsers.isEmpty() && policies.any { it.autostartManaged || it.dozeManaged }) {
+            report.line("No Android users selected; configured app policies were skipped")
+        }
+        policies.forEachIndexed { index, policy ->
+            EnforcementCommandPlan.requireValidPackageName(policy.packageName)
+            if (policy.autostartManaged || policy.dozeManaged) {
+                var installed = false
+                targetUsers.forEach { userId ->
+                    if (policy.packageName in installedPackagesByUser[userId].orEmpty()) {
+                        installed = true
+                        EnforcementCommandPlan.policyCommands(
+                            policy,
+                            userId,
+                            includeAutostartSwitchOp,
+                        ).forEach(report::run)
+                        report.line(
+                            "${policy.packageName} user $userId: " +
+                                "autostart=${if (policy.autostartManaged) policy.autostartEnabled else "unmanaged"} " +
+                                "doze=${if (policy.dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"}",
+                        )
+                    } else {
+                        report.line("${policy.packageName} user $userId: skipped (not installed)")
+                    }
+                }
+                if (installed) EnforcementCommandPlan.dozeWhitelistCommand(policy)?.let(report::run)
+            } else {
+                report.line("${policy.packageName}: no per-app policy selected")
+            }
+            onProgress?.invoke(progressStartIndex + index + 1)
+        }
+        if (includeSelfProtection) {
+            report.line("Self-protection: user 0")
+            EnforcementCommandPlan.selfProtectionCommands(
+                BuildConfig.APPLICATION_ID,
+                includeAutostartSwitchOp,
+            ).forEach(report::run)
+        }
+        if (includeWriteSettings) report.run(EnforcementCommandPlan.writeAppOpsSettingsCommand())
+        val durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+        return report.build(durationMillis).also { output ->
+            serviceLog(
+                if (report.failed == 0) 'I' else 'E',
+                "Commands",
+                "attempts=${report.attempts} failed=${report.failed} durationMs=$durationMillis output=${output.singleLine(4_000)}",
+            )
+        }
     }
 
     private fun decodePolicies(
@@ -175,15 +236,15 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
                 dozeManaged = dozeManaged[index],
                 dozePolicy = AppDozePolicy.fromCode(dozePolicies[index]),
             )
-        }
+        }.onEach { policy -> EnforcementCommandPlan.requireValidPackageName(policy.packageName) }
     }
 
     private fun loadInstalledPackages(targetUserIds: List<Int>): InstalledPackagesSnapshot {
         var failed = false
         val reports = mutableListOf<String>()
         val packagesByUser = targetUserIds.associateWith { userId ->
-            val result = runCommand(
-                listOf(PM_BINARY, "list", "packages", "--user", userId.toString()),
+            val result = runSystemCommand(
+                SystemServiceCommands.packageManager("list", "packages", "--user", userId.toString()),
                 USER_LIST_COMMAND_TIMEOUT_SECONDS,
                 MAX_PACKAGE_LIST_OUTPUT_LENGTH,
             )
@@ -216,6 +277,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         Log.i(TAG, "Destroying Shizuku user service")
         fcmPolling?.cancel(false)
         fcmExecutor.shutdownNow()
+        systemCommands.close()
         synchronized(serviceLogLock) {
             runCatching { serviceLogWriter?.close() }
             serviceLogWriter = null
@@ -258,15 +320,63 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     ): String {
         val packages = packageNames.distinct().sorted()
         val users = targetUserIds.distinct().sorted()
+        packages.forEach(EnforcementCommandPlan::requireValidPackageName)
         require(users.all { it >= 0 }) { "Invalid Android user ID" }
         serviceLog(
             'I',
             "Unstop",
             "start trigger=$trigger packages=${packages.size} users=${users.joinToString()}",
         )
-        val report = runScript(UnstopScript.build(packages, users))
+        var checked = 0
+        var unstopped = 0
+        var failed = 0
+        val lines = mutableListOf<String>()
+        if (packages.isEmpty() || users.isEmpty()) {
+            lines += "Auto unstop: no packages or Android users selected"
+        } else {
+            users.forEach { userId ->
+                val state = runSystemCommand(
+                    SystemServiceCommands.packageManager(
+                        "list",
+                        "packages",
+                        "--user",
+                        userId.toString(),
+                        "--show-stopped",
+                    ),
+                    USER_LIST_COMMAND_TIMEOUT_SECONDS,
+                    MAX_PACKAGE_LIST_OUTPUT_LENGTH,
+                )
+                if (!state.succeeded) {
+                    failed++
+                    lines += "Auto unstop: failed to list user $userId (${state.summary})"
+                    return@forEach
+                }
+                val stoppedPackages = PackageManagerOutput.selectedStoppedPackages(state.output, packages)
+                stoppedPackages.forEach { packageName ->
+                    checked++
+                    val result = runSystemCommand(
+                        SystemServiceCommands.packageManager(
+                            "unstop",
+                            "--user",
+                            userId.toString(),
+                            packageName,
+                        ),
+                        USER_LIST_COMMAND_TIMEOUT_SECONDS,
+                    )
+                    if (result.succeeded) {
+                        unstopped++
+                        lines += "Auto unstop: user $userId package $packageName"
+                    } else {
+                        failed++
+                        lines += "Auto unstop: failed user $userId package $packageName (${result.summary})"
+                    }
+                }
+            }
+        }
+        lines += "Auto unstop summary: checked=$checked unstopped=$unstopped failed=$failed"
+        val report = lines.joinToString("\n")
         serviceLog(
-            if (report.contains("FAILED") || report.contains("exit_code=")) 'E' else 'I',
+            if (failed > 0) 'E' else 'I',
             "Unstop",
             "finish trigger=$trigger report=${report.singleLine(2_000)}",
         )
@@ -297,6 +407,9 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         targetUserIds: IntArray,
         trigger: String,
     ): String {
+        EnforcementCommandPlan.requireValidPackageName(packageName)
+        val targetUsers = targetUserIds.distinct().sorted()
+        require(targetUsers.all { it >= 0 }) { "Invalid Android user ID" }
         val policy = AppPolicy(
             packageName = packageName,
             appEnabled = true,
@@ -305,21 +418,30 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             dozeManaged = dozeManaged,
             dozePolicy = AppDozePolicy.fromCode(dozePolicy),
         )
-        val script = EnforcementScript.build(
-            policies = listOf(policy),
-            applicationId = BuildConfig.APPLICATION_ID,
-            targetUsers = targetUserIds.toList(),
-            includeSelfProtection = false,
-            includeAutostartSwitchOp = isAutostartSwitchOpAvailable(),
-        )
         serviceLog(
             'I',
             "AppPolicy",
             "apply trigger=$trigger package=$packageName autostart=${if (autostartManaged) autostartEnabled else "unmanaged"} battery=${if (dozeManaged) policy.dozePolicy.persistedValue else "unmanaged"} users=${targetUserIds.joinToString()}",
         )
-        return runScript(script).also { report ->
+        val installedSnapshot = loadInstalledPackages(targetUsers)
+        return buildString {
+            appendLine(installedSnapshot.report)
+            append(
+                enforcePolicyBatch(
+                    policies = listOf(policy),
+                    targetUsers = targetUsers,
+                    installedPackagesByUser = installedSnapshot.packagesByUser,
+                    includeSelfProtection = false,
+                    includeWriteSettings = true,
+                    includeAutostartSwitchOp = isAutostartSwitchOpAvailable(),
+                    progressStartIndex = 0,
+                    onProgress = null,
+                ),
+            )
+            if (installedSnapshot.failed) append("\nFAILED: one or more installed-package snapshots failed")
+        }.also { report ->
             serviceLog(
-                if (report.contains("FAILED:")) 'E' else 'I',
+                if (report.contains("FAILED")) 'E' else 'I',
                 "AppPolicy",
                 "finish trigger=$trigger report=${report.singleLine(2_000)}",
             )
@@ -334,15 +456,13 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
      */
     private fun isAutostartSwitchOpAvailable(): Boolean {
         autostartSwitchOpAvailable?.let { return it }
-        val result = runCommand(
-            listOf(
-                CMD_BINARY,
-                "appops",
+        val result = runSystemCommand(
+            SystemServiceCommands.appOps(
                 "set",
                 "--user",
                 "0",
                 BuildConfig.APPLICATION_ID,
-                EnforcementScript.MIUI_AUTOSTART_SWITCH_OP.toString(),
+                EnforcementCommandPlan.MIUI_AUTOSTART_SWITCH_OP.toString(),
                 "allow",
             ),
             SETTINGS_COMMAND_TIMEOUT_SECONDS,
@@ -364,8 +484,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     }
 
     override fun listAndroidUsers(trigger: String): String {
-        val result = runCommand(
-            listOf(PM_BINARY, "list", "users"),
+        val result = runSystemCommand(
+            SystemServiceCommands.packageManager("list", "users"),
             USER_LIST_COMMAND_TIMEOUT_SECONDS,
         )
         val output = if (result.succeeded) {
@@ -499,20 +619,35 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     }
 
     private fun refreshCachedGmsUid(): Int? {
-        val result = runCommand(
-            GmsUidCommand.build(SETTINGS_USER),
+        val result = runSystemCommand(
+            SystemServiceCommands.packageManager(
+                "list",
+                "packages",
+                "--user",
+                SETTINGS_USER,
+                "-U",
+                MilletNoRestrictList.GMS_PACKAGE,
+            ),
             GMS_UID_COMMAND_TIMEOUT_SECONDS,
         )
-        val resolvedUid = result.takeIf(CommandResult::succeeded)
+        val resolvedUid = result.takeIf(SystemServiceCommandRunner.Result::succeeded)
             ?.output
-            ?.let(GmsUidCommand::parse)
+            ?.let { output -> PackageManagerOutput.packageUid(output, MilletNoRestrictList.GMS_PACKAGE) }
         if (resolvedUid != null) cachedGmsUid = resolvedUid
         return resolvedUid
     }
 
     private fun sendGcmReconnect(nowElapsed: Long) {
-        val result = runCommand(
-            FcmReconnectCommand.build(SETTINGS_USER),
+        val result = runSystemCommand(
+            SystemServiceCommands.activity(
+                "broadcast",
+                "--user",
+                SETTINGS_USER,
+                "-a",
+                GCM_RECONNECT_ACTION,
+                "-p",
+                MilletNoRestrictList.GMS_PACKAGE,
+            ),
             FCM_COMMAND_TIMEOUT_SECONDS,
         )
         if (result.succeeded) {
@@ -545,9 +680,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
 
         val updated = MilletNoRestrictList.appendGms(initialRead.output)
         val serialized = MilletNoRestrictList.serialize(updated)
-        val write = runCommand(
-            listOf(
-                SETTINGS_BINARY,
+        val write = runSystemCommand(
+            SystemServiceCommands.settings(
                 "--user",
                 SETTINGS_USER,
                 "put",
@@ -566,9 +700,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         "MILLET no-restrict: append write completed after preserving ${existing.size} entries"
     }
 
-    private fun readMilletNoRestrict(): CommandResult = runCommand(
-        listOf(
-            SETTINGS_BINARY,
+    private fun readMilletNoRestrict(): SystemServiceCommandRunner.Result = runSystemCommand(
+        SystemServiceCommands.settings(
             "--user",
             SETTINGS_USER,
             "get",
@@ -603,11 +736,11 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         }
 
         val command = if (candidate.isEmpty()) {
-            listOf(SETTINGS_BINARY, "delete", "global", AurogonConfig.SETTING_NAME)
+            SystemServiceCommands.settings("delete", "global", AurogonConfig.SETTING_NAME)
         } else {
-            listOf(SETTINGS_BINARY, "put", "global", AurogonConfig.SETTING_NAME, candidate)
+            SystemServiceCommands.settings("put", "global", AurogonConfig.SETTING_NAME, candidate)
         }
-        val write = runCommand(command, SETTINGS_COMMAND_TIMEOUT_SECONDS)
+        val write = runSystemCommand(command, SETTINGS_COMMAND_TIMEOUT_SECONDS)
         if (!write.succeeded) {
             return@synchronized "Aurogon: FAILED to write (${write.summary})"
         }
@@ -630,13 +763,18 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         "Aurogon: updated managed rules (${desired.size} enabled)"
     }
 
-    private fun readAurogonEnable(): CommandResult = runCommand(
-        listOf(SETTINGS_BINARY, "get", "global", AurogonConfig.SETTING_NAME),
+    private fun readAurogonEnable(): SystemServiceCommandRunner.Result = runSystemCommand(
+        SystemServiceCommands.settings("get", "global", AurogonConfig.SETTING_NAME),
         SETTINGS_COMMAND_TIMEOUT_SECONDS,
     )
 
     private fun runGreezerCommand(label: String, vararg arguments: String): String {
-        val result = runCommand(listOf(DUMPSYS_BINARY, "greezer", *arguments), GREEZER_COMMAND_TIMEOUT_SECONDS)
+        val result = systemCommands.dump(
+            serviceName = SystemServiceCommands.GREEZER_SERVICE,
+            arguments = arguments.toList(),
+            timeoutSeconds = GREEZER_COMMAND_TIMEOUT_SECONDS,
+            maxOutputLength = MAX_OUTPUT_LENGTH,
+        )
         serviceLog(
             if (result.succeeded) 'I' else 'E',
             "Greezer",
@@ -646,53 +784,6 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             "$label: applied"
         } else {
             "$label: unavailable (${result.summary})"
-        }
-    }
-
-    private fun runScript(script: String, onProgress: ((Int) -> Unit)? = null): String {
-        val startedAt = System.nanoTime()
-        val process = ProcessBuilder("/system/bin/sh", "-c", script)
-            .redirectErrorStream(true)
-            .start()
-        val output = StringBuilder()
-        val reader = thread(name = "guard-command-output", isDaemon = true) {
-            process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line ->
-                    val progress = line
-                        .removePrefix(EnforcementScript.PROGRESS_PREFIX)
-                        .takeIf { it != line }
-                        ?.toIntOrNull()
-                    if (progress != null) {
-                        onProgress?.invoke(progress)
-                    } else if (output.length < MAX_OUTPUT_LENGTH) {
-                        output.appendLine(line)
-                    }
-                }
-            }
-        }
-
-        val completed = process.waitFor(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        if (!completed) process.destroyForcibly()
-        reader.join(2_000)
-        val durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-
-        return buildString {
-            append("service_uid=").append(Process.myUid())
-            append(" duration_ms=").append(durationMillis).appendLine()
-            append(output.toString().trim())
-            if (!completed) {
-                appendLine()
-                append("FAILED: enforcement exceeded ").append(COMMAND_TIMEOUT_SECONDS).append(" seconds")
-            } else if (process.exitValue() != 0) {
-                appendLine()
-                append("exit_code=").append(process.exitValue())
-            }
-        }.trim().also { report ->
-            serviceLog(
-                if (completed && process.exitValue() == 0) 'I' else 'E',
-                "Script",
-                "completed=$completed exit=${if (completed) process.exitValue() else -1} durationMs=$durationMillis output=${report.singleLine(4_000)}",
-            )
         }
     }
 
@@ -765,54 +856,52 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         return if (flattened.length > maxChars) flattened.take(maxChars) + "..." else flattened
     }
 
-    private fun runCommand(
-        command: List<String>,
+    private fun runSystemCommand(
+        command: SystemServiceCommand,
         timeoutSeconds: Long,
         maxOutputLength: Int = MAX_OUTPUT_LENGTH,
-    ): CommandResult {
-        val process = runCatching {
-            ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start()
-        }.getOrElse { error ->
-            return CommandResult(
-                completed = true,
-                exitCode = -1,
-                output = error.message ?: error.javaClass.simpleName,
+    ): SystemServiceCommandRunner.Result = systemCommands.run(command, timeoutSeconds, maxOutputLength)
+
+    private inner class CommandReport(header: String) {
+        private val lines = mutableListOf(header)
+        private val deadlineNanos = System.nanoTime() +
+            TimeUnit.SECONDS.toNanos(POLICY_BATCH_TIMEOUT_SECONDS)
+        var attempts: Int = 0
+            private set
+        private var succeeded: Int = 0
+        var failed: Int = 0
+            private set
+
+        fun line(message: String) {
+            lines += message
+        }
+
+        fun run(command: SystemServiceCommand) {
+            attempts++
+            val remainingNanos = deadlineNanos - System.nanoTime()
+            if (remainingNanos <= 0) {
+                failed++
+                lines += "FAILED [${command.diagnosticName}]: policy batch timed out"
+                return
+            }
+            val remainingSeconds = (remainingNanos + NANOS_PER_SECOND - 1) / NANOS_PER_SECOND
+            val result = runSystemCommand(
+                command,
+                minOf(POLICY_COMMAND_TIMEOUT_SECONDS, remainingSeconds),
             )
-        }
-        val output = StringBuilder()
-        val reader = thread(name = "privileged-command-output", isDaemon = true) {
-            process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line ->
-                    if (output.length < maxOutputLength) output.appendLine(line)
-                }
+            if (result.succeeded) {
+                succeeded++
+            } else {
+                failed++
+                lines += "FAILED [${command.diagnosticName}]: ${result.summary}"
             }
         }
-        val completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
-        if (!completed) process.destroyForcibly()
-        reader.join(2_000)
-        return CommandResult(
-            completed = completed,
-            exitCode = if (completed) process.exitValue() else -1,
-            output = output.toString().trim(),
-        )
-    }
 
-    private data class CommandResult(
-        val completed: Boolean,
-        val exitCode: Int,
-        val output: String,
-    ) {
-        val succeeded: Boolean
-            get() = completed && exitCode == 0
-
-        val summary: String
-            get() = when {
-                !completed -> "timed out"
-                output.isNotBlank() -> "exit $exitCode: ${output.take(240)}"
-                else -> "exit $exitCode"
-            }
+        fun build(durationMillis: Long): String = buildString {
+            append("service_uid=${Process.myUid()} duration_ms=$durationMillis").appendLine()
+            append(lines.joinToString("\n")).appendLine()
+            append("summary: $succeeded/$attempts commands succeeded; $failed failed")
+        }
     }
 
     private data class InstalledPackagesSnapshot(
@@ -823,7 +912,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
 
     companion object {
         private const val TAG = "PowerKeeperFix/Shizuku"
-        private const val COMMAND_TIMEOUT_SECONDS = 120L
+        private const val POLICY_BATCH_TIMEOUT_SECONDS = 120L
+        private const val POLICY_COMMAND_TIMEOUT_SECONDS = 10L
         private const val SETTINGS_COMMAND_TIMEOUT_SECONDS = 10L
         private const val FCM_COMMAND_TIMEOUT_SECONDS = 10L
         private const val GMS_UID_COMMAND_TIMEOUT_SECONDS = 10L
@@ -832,10 +922,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val MAX_OUTPUT_LENGTH = 64_000
         private const val MAX_PACKAGE_LIST_OUTPUT_LENGTH = 512_000
         private const val MAX_PENDING_LOG_CHARS = 128_000
-        private const val SETTINGS_BINARY = "/system/bin/settings"
         private const val SETTINGS_USER = "0"
-        private const val DUMPSYS_BINARY = "/system/bin/dumpsys"
-        private const val PM_BINARY = "/system/bin/pm"
-        private const val CMD_BINARY = "/system/bin/cmd"
+        private const val GCM_RECONNECT_ACTION = "com.google.android.intent.action.GCM_RECONNECT"
+        private const val NANOS_PER_SECOND = 1_000_000_000L
     }
 }

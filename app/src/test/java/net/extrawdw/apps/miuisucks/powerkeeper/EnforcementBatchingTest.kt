@@ -24,19 +24,6 @@ class EnforcementBatchingTest {
             policies.map(AppPolicy::packageName).sorted(),
             batches.flatten().map(AppPolicy::packageName),
         )
-        batches.forEachIndexed { index, batch ->
-            val installed = batch.map(AppPolicy::packageName).toSet()
-            val script = EnforcementScript.build(
-                policies = batch,
-                applicationId = "net.extrawdw.apps.miuisucks.powerkeeper",
-                targetUsers = listOf(0, 999),
-                includeSelfProtection = index == 0,
-                includeWriteSettings = index == batches.lastIndex,
-                installedPackagesByUser = mapOf(0 to installed, 999 to installed),
-                progressStartIndex = index * EnforcementBatching.MAX_POLICIES_PER_BATCH,
-            )
-            assertTrue("Batch script was unexpectedly large: ${script.length}", script.length < 32_000)
-        }
     }
 
     @Test

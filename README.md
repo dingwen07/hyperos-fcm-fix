@@ -80,7 +80,7 @@ Both Xiaomi Autostart AppOps are enabled for the app on owner user 0: enforcemen
 
 ## Safety model
 
-The app does not use root, hidden APIs, UID-wide AppOps, uninstall operations, data clearing, UI automation, or destructive filesystem operations. It does not modify the PowerKeeper package. Its long-running Shizuku UserService exposes only the fixed enforcement and FCM-monitoring operations required by the app.
+The app does not use root, UID-wide AppOps, uninstall operations, data clearing, UI automation, or destructive filesystem operations. It does not modify the PowerKeeper package. Its long-running Shizuku UserService exposes only the fixed enforcement and FCM-monitoring operations required by the app. Inside that shell-identity service, Android system commands are dispatched through each system service's Binder shell or dump entry point instead of spawning `/system/bin` child processes.
 
 Android's device-idle allowlist is global per application ID. Unrestricted and Optimized allowlist changes are therefore not user-scoped; per-user AppOps changes target only the Android users enabled in the app. Owner (`0`) and XSpace (`999`) users are enabled by default, while other discovered users are disabled by default.
 

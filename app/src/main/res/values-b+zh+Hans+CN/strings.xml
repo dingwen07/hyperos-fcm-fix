@@ -18,7 +18,7 @@
     <string name="manage">管理</string>
 
     <string name="automatic_protection">自动保护</string>
-    <string name="protection_summary">Google Play 服务已受保护。Aurogon：%1$d 个应用 · 自动解除停止：%2$d 个应用 · 自启动：%3$d 个应用 · 定期重新应用设置：%4$d 个应用。</string>
+    <string name="protection_summary">Google Play 服务已受保护。Aurogon：%1$d 个应用 · 自动解除停止：%2$d 个应用 · 自启动：%3$d 个应用。</string>
     <string name="applying">正在应用…</string>
     <string name="apply_now">立即应用</string>
 
@@ -41,13 +41,11 @@
     <string name="aurogon_protection">Aurogon FCM 保护</string>
     <string name="aurogon_protection_description">当 HyperOS 准备缓存已冻结应用的 FCM 广播时唤醒此应用。</string>
     <string name="auto_unstop">自动解除停止</string>
-    <string name="auto_unstop_description">定期清除该 FCM 应用的 FLAG_STOPPED，但不会启动应用。此功能独立于“定期重新应用设置”。</string>
+    <string name="auto_unstop_description">清除该 FCM 应用的 FLAG_STOPPED，但不会启动应用。独立的 FCM 恢复任务每 15 分钟运行一次。</string>
     <string name="miui_autostart">HyperOS 自启动</string>
     <string name="miui_autostart_description">管理两个小米自启动 AppOp。关闭时不更改自启动设置。</string>
     <string name="policy_enabled">启用</string>
     <string name="policy_disabled">停用</string>
-    <string name="periodic_enforcement">定期重新应用设置</string>
-    <string name="periodic_enforcement_description">仅当此应用的自启动或 AOSP 电池优化管理开关已开启时，才定期重新应用相应设置。Aurogon 和自动解除停止会独立运行。</string>
     <string name="aosp_doze_policy">AOSP 电池优化</string>
     <string name="aosp_doze_policy_description">管理所选 Android 用户的此项设置。关闭时保持不变。</string>
     <string name="app_doze_unrestricted">无限制</string>

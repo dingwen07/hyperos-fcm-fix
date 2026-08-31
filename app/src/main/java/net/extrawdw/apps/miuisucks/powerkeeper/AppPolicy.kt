@@ -42,7 +42,6 @@ data class AppPolicy(
     val autostartEnabled: Boolean = false,
     val dozeManaged: Boolean = false,
     val dozePolicy: AppDozePolicy = AppDozePolicy.DEFAULT,
-    val periodicEnforcement: Boolean = false,
 ) {
     fun withAppEnabled(enabled: Boolean, initializeDefaults: Boolean = false): AppPolicy =
         if (!enabled) {
@@ -92,7 +91,6 @@ object AppPolicyDefaults {
                 autostartEnabled = true,
                 dozeManaged = true,
                 dozePolicy = AppDozePolicy.DEFAULT,
-                periodicEnforcement = true,
             )
         } else {
             AppPolicy(packageName)

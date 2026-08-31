@@ -56,7 +56,6 @@ fun AppManagementScreen(
     onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
-    onPeriodicChanged: (String, Boolean) -> Unit,
     onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
@@ -121,7 +120,6 @@ fun AppManagementScreen(
             onAutoUnstopChanged = onAutoUnstopChanged,
             onAutostartManagedChanged = onAutostartManagedChanged,
             onAutostartChanged = onAutostartChanged,
-            onPeriodicChanged = onPeriodicChanged,
             onDozeManagedChanged = onDozeManagedChanged,
             onDozeChanged = onDozeChanged,
         )
@@ -200,7 +198,6 @@ private fun AppPolicySheet(
     onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
-    onPeriodicChanged: (String, Boolean) -> Unit,
     onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
@@ -252,13 +249,6 @@ private fun AppPolicySheet(
                     }
                 }
             }
-            PolicySwitchRow(
-                title = stringResource(R.string.periodic_enforcement),
-                description = stringResource(R.string.periodic_enforcement_description),
-                checked = policy.periodicEnforcement,
-                onCheckedChange = { onPeriodicChanged(app.packageName, it) },
-            )
-
             HorizontalDivider()
             PolicySwitchRow(
                 title = stringResource(R.string.aosp_doze_policy),

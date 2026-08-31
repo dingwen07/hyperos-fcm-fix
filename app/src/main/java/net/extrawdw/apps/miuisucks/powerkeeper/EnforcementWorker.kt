@@ -27,7 +27,7 @@ class EnforcementWorker(
         val targetUserIds = store.loadEnabledAndroidUserIds()
         AppLog.i(
             "Worker/Enforcement",
-            "settings aurogon=${settings.aurogonEnabledPackages.size} periodic=${settings.periodicallyEnforcedAppPolicies.size} users=${targetUserIds.joinToString()}",
+            "settings aurogon=${settings.aurogonEnabledPackages.size} policies=${settings.enabledAppPolicies.size} users=${targetUserIds.joinToString()}",
         )
 
         if (!isShizukuAvailable()) {
@@ -47,7 +47,7 @@ class EnforcementWorker(
         return try {
             val report = PrivilegedServiceClient.enforce(
                 settings.aurogonEnabledPackages,
-                settings.periodicallyEnforcedAppPolicies,
+                settings.enabledAppPolicies,
                 targetUserIds,
                 settings.milletPollingIntervalMillis,
                 settings.fcmReconnectEnabled,

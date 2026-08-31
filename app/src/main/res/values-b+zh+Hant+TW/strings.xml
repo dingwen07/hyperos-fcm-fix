@@ -18,7 +18,7 @@
     <string name="manage">管理</string>
 
     <string name="automatic_protection">自動保護</string>
-    <string name="protection_summary">Google Play 服務已受到保護。Aurogon：%1$d 個應用程式 · 自動解除停止：%2$d 個應用程式 · 自動啟動：%3$d 個應用程式 · 週期性 AppOps：%4$d 個應用程式。</string>
+    <string name="protection_summary">Google Play 服務已受到保護。Aurogon：%1$d 個應用程式 · 自動解除停止：%2$d 個應用程式 · 自動啟動：%3$d 個應用程式。</string>
     <string name="applying">套用中…</string>
     <string name="apply_now">立即套用</string>
 
@@ -41,13 +41,11 @@
     <string name="aurogon_protection">Aurogon FCM 保護</string>
     <string name="aurogon_protection_description">當 HyperOS 準備快取此應用程式已凍結的 FCM 廣播時，喚醒此應用程式。</string>
     <string name="auto_unstop">自動解除停止</string>
-    <string name="auto_unstop_description">定期清除這個 FCM 應用程式的 FLAG_STOPPED，但不會啟動應用程式。此功能獨立於「週期性套用」執行。</string>
+    <string name="auto_unstop_description">清除這個 FCM 應用程式的 FLAG_STOPPED，但不會啟動應用程式。獨立的 FCM 復原工作每 15 分鐘執行一次。</string>
     <string name="miui_autostart">HyperOS 自動啟動</string>
     <string name="miui_autostart_description">管理 Xiaomi 的兩個自動啟動 AppOps。關閉時不變更自動啟動設定。</string>
     <string name="policy_enabled">啟用</string>
     <string name="policy_disabled">停用</string>
-    <string name="periodic_enforcement">週期性套用</string>
-    <string name="periodic_enforcement_description">只有在自動啟動與 AOSP 電池最佳化的管理開關啟用時，才會週期性還原此應用程式的相關設定。Aurogon 與自動解除停止會獨立執行。</string>
     <string name="aosp_doze_policy">AOSP 電池最佳化</string>
     <string name="aosp_doze_policy_description">針對選取的 Android 使用者管理此設定。關閉時保持不變。</string>
     <string name="app_doze_unrestricted">不受限制</string>

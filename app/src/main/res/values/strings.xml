@@ -18,7 +18,7 @@
     <string name="manage">Manage</string>
 
     <string name="automatic_protection">Automatic protection</string>
-    <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Auto unstop: %2$d apps · Autostart: %3$d apps · Periodic AppOps: %4$d apps.</string>
+    <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Auto unstop: %2$d apps · Autostart: %3$d apps.</string>
     <string name="applying">Applying…</string>
     <string name="apply_now">Apply now</string>
 
@@ -41,13 +41,11 @@
     <string name="aurogon_protection">Aurogon FCM protection</string>
     <string name="aurogon_protection_description">Wake this app when HyperOS would cache its frozen FCM broadcast.</string>
     <string name="auto_unstop">Auto unstop</string>
-    <string name="auto_unstop_description">Periodically clear FLAG_STOPPED for this FCM app without launching it. This runs independently of Periodic enforcement.</string>
+    <string name="auto_unstop_description">Clear FLAG_STOPPED for this FCM app without launching it. The independent FCM recovery job runs every 15 minutes.</string>
     <string name="miui_autostart">HyperOS Autostart</string>
     <string name="miui_autostart_description">Manage both Xiaomi Autostart AppOps. When off, leave Autostart unchanged.</string>
     <string name="policy_enabled">Enabled</string>
     <string name="policy_disabled">Disabled</string>
-    <string name="periodic_enforcement">Periodic enforcement</string>
-    <string name="periodic_enforcement_description">Periodically restore this app’s Autostart and AOSP Battery optimization settings only when their management switches are enabled. Aurogon and Auto unstop run independently.</string>
     <string name="aosp_doze_policy">AOSP Battery optimization</string>
     <string name="aosp_doze_policy_description">Manage this setting for the selected Android profiles. When off, leave it unchanged.</string>
     <string name="app_doze_unrestricted">Unrestricted</string>

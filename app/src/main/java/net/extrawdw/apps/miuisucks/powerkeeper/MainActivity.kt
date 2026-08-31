@@ -193,7 +193,6 @@ class MainActivity : ComponentActivity() {
                         onAutoUnstopChanged = ::setAutoUnstopEnabled,
                         onAutostartManagedChanged = ::setAutostartManaged,
                         onAutostartChanged = ::setAutostartEnabled,
-                        onPeriodicChanged = ::setPeriodicEnforcement,
                         onDozeManagedChanged = ::setDozeManaged,
                         onDozeChanged = ::setDozePolicy,
                         onIntervalSelected = ::setInterval,
@@ -461,11 +460,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setPeriodicEnforcement(packageName: String, enabled: Boolean) {
-        settingsStore.setPeriodicEnforcement(packageName, enabled)
-        refreshAppSetting(packageName, willApply = false)
-    }
-
     private fun setDozeManaged(packageName: String, managed: Boolean) {
         settingsStore.setDozeManaged(packageName, managed)
         val policy = refreshAppSetting(packageName, willApply = managed).policyFor(packageName)
@@ -650,7 +644,7 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 PrivilegedServiceClient.enforce(
                     settings.aurogonEnabledPackages,
-                    settings.periodicallyEnforcedAppPolicies,
+                    settings.enabledAppPolicies,
                     settingsStore.loadEnabledAndroidUserIds(),
                     settings.milletPollingIntervalMillis,
                     settings.fcmReconnectEnabled,
@@ -918,7 +912,6 @@ private fun GuardApp(
     onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
     onAutostartChanged: (String, Boolean) -> Unit,
-    onPeriodicChanged: (String, Boolean) -> Unit,
     onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
     onIntervalSelected: (Long) -> Unit,
@@ -998,18 +991,18 @@ private fun GuardApp(
                     )
                 }
                 item {
-                    AndroidUsersCard(
-                        state = state,
-                        onRefreshUsers = onRefreshAndroidUsers,
-                        onUserEnabledChanged = onAndroidUserEnabledChanged,
-                    )
-                }
-                item {
                     MilletNoRestrictCard(
                         state = state,
                         onCheckValue = onCheckMilletValue,
                         onPollingIntervalSelected = onMilletPollingIntervalSelected,
                         onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
+                    )
+                }
+                item {
+                    AndroidUsersCard(
+                        state = state,
+                        onRefreshUsers = onRefreshAndroidUsers,
+                        onUserEnabledChanged = onAndroidUserEnabledChanged,
                     )
                 }
                 state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
@@ -1025,7 +1018,6 @@ private fun GuardApp(
                 onAutoUnstopChanged = onAutoUnstopChanged,
                 onAutostartManagedChanged = onAutostartManagedChanged,
                 onAutostartChanged = onAutostartChanged,
-                onPeriodicChanged = onPeriodicChanged,
                 onDozeManagedChanged = onDozeManagedChanged,
                 onDozeChanged = onDozeChanged,
             )
@@ -1132,7 +1124,6 @@ private fun ProtectionCard(
         state.settings.aurogonEnabledPackages.size,
         state.settings.autoUnstopPackages.size,
         policies.count { it.autostartManaged && it.autostartEnabled },
-        state.settings.periodicallyEnforcedAppPolicies.size,
     )
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {

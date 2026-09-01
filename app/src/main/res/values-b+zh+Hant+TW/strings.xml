@@ -16,6 +16,9 @@
     <string name="grant_access">授予存取權</string>
     <string name="open_shizuku">開啟 Shizuku</string>
     <string name="manage">管理</string>
+    <string name="adb_permission_limited_title">您需要在 Xiaomi HyperOS 上進行額外的步驟</string>
+    <string name="adb_permission_limited_description">Xiaomi 限制了 ADB 權限，本應用程式的大多數功能將無法使用。\n\n請在「開發人員選項」中開啟「USB 偵錯（安全設定）」。注意，這和「USB 偵錯」是兩個分開的選項。\n\n您可能需要重新啟動 Shizuku 以使設定生效。</string>
+    <string name="open_developer_options">開發人員選項</string>
 
     <string name="automatic_protection">自動保護</string>
     <string name="protection_summary">Google Play 服務已受到保護。Aurogon：%1$d 個應用程式 · 自動解除停止：%2$d 個應用程式 · 自動啟動：%3$d 個應用程式。</string>

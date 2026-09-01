@@ -16,6 +16,9 @@
     <string name="grant_access">授予权限</string>
     <string name="open_shizuku">打开 Shizuku</string>
     <string name="manage">管理</string>
+    <string name="adb_permission_limited_title">您需要在小米 HyperOS 上进行额外的步骤</string>
+    <string name="adb_permission_limited_description">小米限制了 ADB 权限，本应用的大多数功能将无法使用。\n\n请在“开发者选项”中开启“USB 调试（安全设置）”。注意，这和“USB 调试”是两个分开的选项。\n\n您可能需要重新启动 Shizuku 以使设置生效。</string>
+    <string name="open_developer_options">开发者选项</string>
 
     <string name="automatic_protection">自动保护</string>
     <string name="protection_summary">Google Play 服务已受保护。Aurogon：%1$d 个应用 · 自动解除停止：%2$d 个应用 · 自启动：%3$d 个应用。</string>

@@ -84,6 +84,7 @@ enum class ShizukuConnectionState {
 data class ShizukuStatus(
     val available: Boolean = false,
     val granted: Boolean = false,
+    val adbPermissionLimited: Boolean = false,
     val connectionState: ShizukuConnectionState = ShizukuConnectionState.CHECKING,
 )
 
@@ -299,9 +300,13 @@ class MainActivity : ComponentActivity() {
                 val granted = available && runCatching {
                     Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
                 }.getOrDefault(false)
+                val adbPermissionLimited = available && granted && runCatching {
+                    isAdbPermissionLimited()
+                }.getOrDefault(false)
                 ShizukuStatus(
                     available = available,
                     granted = granted,
+                    adbPermissionLimited = adbPermissionLimited,
                     connectionState = when {
                         !available -> ShizukuConnectionState.NOT_RUNNING
                         !granted -> ShizukuConnectionState.PERMISSION_REQUIRED
@@ -997,6 +1002,9 @@ private fun GuardApp(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
+                if (state.shizuku.adbPermissionLimited) {
+                    item { AdbPermissionWarningCard() }
+                }
                 item {
                     ProtectionCard(
                         state = state,

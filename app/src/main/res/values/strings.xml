@@ -16,6 +16,9 @@
     <string name="grant_access">Grant access</string>
     <string name="open_shizuku">Open Shizuku</string>
     <string name="manage">Manage</string>
+    <string name="adb_permission_limited_title">You need to take an extra step on Xiaomi HyperOS</string>
+    <string name="adb_permission_limited_description">Xiaomi has restricted ADB permissions, and most features of this app will not work.\n\nIn Developer options, enable “USB debugging (Security options)”. Note that this is a separate option from “USB debugging”.\n\nYou may need to restart Shizuku for the change to take effect.</string>
+    <string name="open_developer_options">Developer options</string>
 
     <string name="automatic_protection">Automatic protection</string>
     <string name="protection_summary">Google Play services is protected. Aurogon: %1$d apps · Auto unstop: %2$d apps · Autostart: %3$d apps.</string>

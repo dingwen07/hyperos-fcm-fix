@@ -5,34 +5,43 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
+import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,17 +49,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun AppManagementScreen(
     apps: List<InstalledFcmApp>?,
     policies: Map<String, AppPolicy>,
+    query: String,
+    onQueryChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
+    showSearchField: Boolean = true,
+    directive: PaneScaffoldDirective = calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth(currentWindowAdaptiveInfoV2()),
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutoUnstopChanged: (String, Boolean) -> Unit,
@@ -59,30 +78,58 @@ fun AppManagementScreen(
     onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var configFor by remember { mutableStateOf<InstalledFcmApp?>(null) }
-    val normalizedQuery = query.trim().lowercase(Locale.getDefault())
+    var selectedPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    val policyScroll = key(selectedPackage) { rememberScrollState() }
+    val configFor = apps?.firstOrNull { it.packageName == selectedPackage }
+        ?.takeIf { policies.policyFor(it.packageName).appEnabled }
+    // Loading during recreation must not discard the restored selection.
+    LaunchedEffect(apps, selectedPackage, configFor) {
+        if (apps != null && selectedPackage != null && configFor == null) selectedPackage = null
+    }
+    val locale = LocalConfiguration.current.locales[0]
+    val normalizedQuery = query.trim().lowercase(locale)
     val matching = apps.orEmpty().filter { app ->
         normalizedQuery.isEmpty() ||
-            app.label.lowercase(Locale.getDefault()).contains(normalizedQuery) ||
+            app.label.lowercase(locale).contains(normalizedQuery) ||
             app.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
     }
     val sorted = matching.sortedWith(
-        compareBy<InstalledFcmApp> { it.label.lowercase(Locale.getDefault()) }
+        compareBy<InstalledFcmApp> { it.label.lowercase(locale) }
             .thenBy(InstalledFcmApp::packageName),
     )
     val enabled = sorted.filter { policies.policyFor(it.packageName).appEnabled }
     val disabled = sorted.filterNot { policies.policyFor(it.packageName).appEnabled }
 
-    Column(modifier.fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
+    AdaptiveDetailLayout(
+        selectedKey = selectedPackage,
+        onDismiss = { selectedPackage = null },
+        title = configFor?.label.orEmpty(),
+        modifier = modifier,
+        directive = directive,
+        detail = { isPane ->
+            configFor?.let { app ->
+                AppPolicyContent(
+                    app = app,
+                    policy = policies.policyFor(app.packageName),
+                    scrollState = policyScroll,
+                    showTitle = !isPane,
+                    onAurogonChanged = onAurogonChanged,
+                    onAutoUnstopChanged = onAutoUnstopChanged,
+                    onAutostartManagedChanged = onAutostartManagedChanged,
+                    onAutostartChanged = onAutostartChanged,
+                    onDozeManagedChanged = onDozeManagedChanged,
+                    onDozeChanged = onDozeChanged,
+                )
+            }
+        },
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            if (showSearchField) AppSearchField(
+                query = query,
+                onQueryChanged = onQueryChanged,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text(stringResource(R.string.apps_search_hint)) },
-                singleLine = true,
             )
             when {
                 apps == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -94,35 +141,28 @@ fun AppManagementScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize().testTag("apps-list")) {
                     if (enabled.isNotEmpty()) {
                         stickyHeader { AppSectionHeader(stringResource(R.string.apps_section_enabled), enabled.size) }
-                        items(enabled, key = { "enabled:${it.packageName}" }) { app ->
-                            AppPolicyRow(app, policies.policyFor(app.packageName), onAppEnabledChanged) { configFor = app }
+                        items(enabled, key = InstalledFcmApp::packageName) { app ->
+                            AppPolicyRow(
+                                app, policies.policyFor(app.packageName), app.packageName == selectedPackage,
+                                onAppEnabledChanged,
+                            ) { selectedPackage = app.packageName }
                         }
                     }
                     if (disabled.isNotEmpty()) {
                         stickyHeader { AppSectionHeader(stringResource(R.string.apps_section_all), disabled.size) }
-                        items(disabled, key = { "all:${it.packageName}" }) { app ->
-                            AppPolicyRow(app, policies.policyFor(app.packageName), onAppEnabledChanged) { configFor = app }
+                        items(disabled, key = InstalledFcmApp::packageName) { app ->
+                            AppPolicyRow(
+                                app, policies.policyFor(app.packageName), app.packageName == selectedPackage,
+                                onAppEnabledChanged,
+                            ) { selectedPackage = app.packageName }
                         }
                     }
                 }
             }
-    }
-
-    configFor?.let { app ->
-        AppPolicySheet(
-            app = app,
-            policy = policies.policyFor(app.packageName),
-            onDismiss = { configFor = null },
-            onAurogonChanged = onAurogonChanged,
-            onAutoUnstopChanged = onAutoUnstopChanged,
-            onAutostartManagedChanged = onAutostartManagedChanged,
-            onAutostartChanged = onAutostartChanged,
-            onDozeManagedChanged = onDozeManagedChanged,
-            onDozeChanged = onDozeChanged,
-        )
+        }
     }
 }
 
@@ -130,13 +170,18 @@ fun AppManagementScreen(
 private fun AppPolicyRow(
     app: InstalledFcmApp,
     policy: AppPolicy,
+    isSelected: Boolean,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onOpenConfig: () -> Unit,
 ) {
     ListItem(
-        modifier = Modifier.clickable(
-            enabled = policy.appEnabled,
-            onClick = onOpenConfig,
+        modifier = Modifier
+            .testTag("app-row:${app.packageName}")
+            .semantics { selected = isSelected }
+            .clickable(enabled = policy.appEnabled, onClick = onOpenConfig),
+        colors = ListItemDefaults.colors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surface,
         ),
         leadingContent = { AppIcon(app.icon) },
         headlineContent = { Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -151,6 +196,7 @@ private fun AppPolicyRow(
             Switch(
                 checked = policy.appEnabled,
                 onCheckedChange = { onAppEnabledChanged(app.packageName, it) },
+                modifier = Modifier.testTag("app-enabled:${app.packageName}"),
             )
         },
     )
@@ -190,10 +236,11 @@ private fun AppSectionHeader(title: String, count: Int) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppPolicySheet(
+private fun AppPolicyContent(
     app: InstalledFcmApp,
     policy: AppPolicy,
-    onDismiss: () -> Unit,
+    scrollState: ScrollState,
+    showTitle: Boolean,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
@@ -201,84 +248,102 @@ private fun AppPolicySheet(
     onDozeManagedChanged: (String, Boolean) -> Unit,
     onDozeChanged: (String, AppDozePolicy) -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(app.label, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState)
+            .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (showTitle) Text(app.label, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            PolicySwitchRow(
-                title = stringResource(R.string.aurogon_protection),
-                description = stringResource(R.string.aurogon_protection_description),
-                checked = policy.aurogonEnabled,
-                onCheckedChange = { onAurogonChanged(app.packageName, it) },
+        PolicySwitchRow(
+            title = stringResource(R.string.aurogon_protection),
+            description = stringResource(R.string.aurogon_protection_description),
+            checked = policy.aurogonEnabled,
+            onCheckedChange = { onAurogonChanged(app.packageName, it) },
+        )
+        PolicySwitchRow(
+            title = stringResource(R.string.auto_unstop),
+            description = stringResource(R.string.auto_unstop_description),
+            checked = policy.autoUnstopEnabled,
+            onCheckedChange = { onAutoUnstopChanged(app.packageName, it) },
+        )
+        PolicySwitchRow(
+            title = stringResource(R.string.miui_autostart),
+            description = stringResource(R.string.miui_autostart_description),
+            checked = policy.autostartManaged,
+            onCheckedChange = { onAutostartManagedChanged(app.packageName, it) },
+        )
+        if (policy.autostartManaged) {
+            val autostartValues = listOf(true, false)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                autostartValues.forEachIndexed { index, enabled ->
+                    SegmentedButton(
+                        selected = policy.autostartEnabled == enabled,
+                        onClick = { onAutostartChanged(app.packageName, enabled) },
+                        shape = SegmentedButtonDefaults.itemShape(index, autostartValues.size),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (enabled) R.string.policy_enabled else R.string.policy_disabled,
+                            ),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
+        PolicySwitchRow(
+            title = stringResource(R.string.aosp_doze_policy),
+            description = stringResource(R.string.aosp_doze_policy_description),
+            checked = policy.dozeManaged,
+            onCheckedChange = { onDozeManagedChanged(app.packageName, it) },
+        )
+        if (policy.dozeManaged) {
+            val batteryPolicies = listOf(
+                AppDozePolicy.UNRESTRICTED,
+                AppDozePolicy.DEFAULT,
+                AppDozePolicy.RESTRICTED,
             )
-            PolicySwitchRow(
-                title = stringResource(R.string.auto_unstop),
-                description = stringResource(R.string.auto_unstop_description),
-                checked = policy.autoUnstopEnabled,
-                onCheckedChange = { onAutoUnstopChanged(app.packageName, it) },
-            )
-            PolicySwitchRow(
-                title = stringResource(R.string.miui_autostart),
-                description = stringResource(R.string.miui_autostart_description),
-                checked = policy.autostartManaged,
-                onCheckedChange = { onAutostartManagedChanged(app.packageName, it) },
-            )
-            if (policy.autostartManaged) {
-                val autostartValues = listOf(true, false)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    autostartValues.forEachIndexed { index, enabled ->
-                        SegmentedButton(
-                            selected = policy.autostartEnabled == enabled,
-                            onClick = { onAutostartChanged(app.packageName, enabled) },
-                            shape = SegmentedButtonDefaults.itemShape(index, autostartValues.size),
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (enabled) R.string.policy_enabled else R.string.policy_disabled,
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 360.dp * LocalDensity.current.fontScale) {
+                    Column(Modifier.fillMaxWidth().selectableGroup()) {
+                        batteryPolicies.forEach { batteryPolicy ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                                    selected = policy.dozePolicy == batteryPolicy,
+                                    role = Role.RadioButton,
+                                    onClick = { onDozeChanged(app.packageName, batteryPolicy) },
                                 ),
-                                maxLines = 1,
-                            )
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = policy.dozePolicy == batteryPolicy, onClick = null)
+                                Text(stringResource(batteryPolicy.titleRes), Modifier.padding(start = 8.dp))
+                            }
+                        }
+                    }
+                } else {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        batteryPolicies.forEachIndexed { index, batteryPolicy ->
+                            SegmentedButton(
+                                selected = policy.dozePolicy == batteryPolicy,
+                                onClick = { onDozeChanged(app.packageName, batteryPolicy) },
+                                shape = SegmentedButtonDefaults.itemShape(index, batteryPolicies.size),
+                            ) {
+                                Text(stringResource(batteryPolicy.titleRes), maxLines = 1)
+                            }
                         }
                     }
                 }
             }
-            HorizontalDivider()
-            PolicySwitchRow(
-                title = stringResource(R.string.aosp_doze_policy),
-                description = stringResource(R.string.aosp_doze_policy_description),
-                checked = policy.dozeManaged,
-                onCheckedChange = { onDozeManagedChanged(app.packageName, it) },
+            Text(
+                stringResource(policy.dozePolicy.descriptionRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (policy.dozeManaged) {
-                val batteryPolicies = listOf(
-                    AppDozePolicy.UNRESTRICTED,
-                    AppDozePolicy.DEFAULT,
-                    AppDozePolicy.RESTRICTED,
-                )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    batteryPolicies.forEachIndexed { index, batteryPolicy ->
-                        SegmentedButton(
-                            selected = policy.dozePolicy == batteryPolicy,
-                            onClick = { onDozeChanged(app.packageName, batteryPolicy) },
-                            shape = SegmentedButtonDefaults.itemShape(index, batteryPolicies.size),
-                        ) {
-                            Text(stringResource(batteryPolicy.titleRes), maxLines = 1)
-                        }
-                    }
-                }
-                Text(
-                    stringResource(policy.dozePolicy.descriptionRes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

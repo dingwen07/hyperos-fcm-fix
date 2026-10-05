@@ -31,6 +31,17 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     private var fcmPollingIntervalMillis = MilletPollingInterval.DEFAULT_MILLIS
     @Volatile
     private var fcmReconnectEnabled = true
+    private val gameProtection = GameAllowlistProtection(
+        readValue = { readGameAllowlist().asResult() },
+        writeValue = { value ->
+            runSystemCommand(
+                SystemServiceCommands.settings("--user", SETTINGS_USER, "put", "system", GameAllowlist.SETTING_NAME, value),
+                SETTINGS_COMMAND_TIMEOUT_SECONDS,
+            ).asResult().map { }
+        },
+        thawGms = { sendOwnerGmsThaw().asResult().map { } },
+        reconnectGms = { sendGmsReconnect().asResult().map { } },
+    )
     private var cachedGmsUid: Int? = null
     private val serviceLogLock = Any()
     private val serviceLogTimeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
@@ -301,6 +312,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             appendLine(runGreezerCommand("Disable explicit GMS limiter", "IM", "GMS", "disable"))
             appendLine(runGreezerCommand("Restore ordinary GMS allowlist", "LM", "add", MilletNoRestrictList.GMS_PACKAGE))
             appendLine(ensureGmsNoRestrict(logTag))
+            appendLine(maintainGameProtection(logTag).report)
             appendLine(ensureAurogon(desired))
             append(
                 "FCM setting monitor: active " +
@@ -515,6 +527,8 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
     override fun configureFcmPolling(
         intervalMillis: Long,
         fcmReconnectEnabled: Boolean,
+        nighttimeProtectionEnabled: Boolean,
+        removeGameAllowlistGmsOnDisable: Boolean,
         trigger: String,
     ): String {
         require(MilletPollingInterval.isSupported(intervalMillis)) {
@@ -536,14 +550,17 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             startFcmPollingLocked()
         }
         val label = MilletPollingInterval.diagnosticLabel(intervalMillis)
+        val nightResult = gameProtection.configure(nighttimeProtectionEnabled, removeGameAllowlistGmsOnDisable)
+        logGameProtection(nightResult, fcmLogTag(trigger))
         serviceLog(
             'I',
             fcmLogTag(trigger),
             "poll configured trigger=$trigger interval=$label changed=$changed " +
-                "fcmReconnect=$fcmReconnectEnabled reconnectChanged=$reconnectChanged wasActive=$wasActive",
+                "fcmReconnect=$fcmReconnectEnabled reconnectChanged=$reconnectChanged wasActive=$wasActive " +
+                "nighttimeProtection=$nighttimeProtectionEnabled",
         )
         return "FCM setting monitor: active ($label Shizuku poll, " +
-            "reconnect ${if (fcmReconnectEnabled) "enabled" else "disabled"})"
+            "reconnect ${if (fcmReconnectEnabled) "enabled" else "disabled"})\n${nightResult.report}"
     }
 
     private fun startFcmPolling() {
@@ -578,6 +595,10 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
             .onSuccess { result -> logMilletRepairResult(result) }
             .onFailure { error ->
                 serviceLog('E', FCM_POLL_LOG_TAG, "MILLET repair crashed: ${error.stackTraceToString().take(4_000)}")
+            }
+        runCatching { maintainGameProtection(FCM_POLL_LOG_TAG) }
+            .onFailure { error ->
+                serviceLog('E', FCM_POLL_LOG_TAG, "nighttime protection crashed: ${error.stackTraceToString().take(4_000)}")
             }
         if (fcmReconnectEnabled) {
             runCatching { runFcmReconnectProtection() }
@@ -636,18 +657,14 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
 
     override fun forceFcmReconnect(trigger: String): String {
         val logTag = fcmLogTag(trigger)
-        val result = runSystemCommand(
-            SystemServiceCommands.activity(
-                "broadcast",
-                "--user",
-                SETTINGS_USER,
-                "-a",
-                GCM_RECONNECT_ACTION,
-                "-p",
-                MilletNoRestrictList.GMS_PACKAGE,
-            ),
-            FCM_COMMAND_TIMEOUT_SECONDS,
-        )
+        val thaw = gameProtection.prepareReconnect()
+        if (thaw.isFailure) {
+            val error = thaw.exceptionOrNull()
+            val report = "FCM reconnect: FAILED: owner GMS thaw (${error?.message ?: "unknown error"})"
+            serviceLog('E', logTag, "reconnect trigger=$trigger result=$report")
+            return report
+        }
+        val result = sendGmsReconnect()
         val report = if (result.succeeded) {
             "FCM reconnect: broadcast sent"
         } else {
@@ -660,6 +677,54 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         )
         return report
     }
+
+    private fun sendGmsReconnect(): SystemServiceCommandRunner.Result = runSystemCommand(
+        SystemServiceCommands.activity(
+            "broadcast",
+            "--user",
+            SETTINGS_USER,
+            "-a",
+            GCM_RECONNECT_ACTION,
+            "-p",
+            MilletNoRestrictList.GMS_PACKAGE,
+        ),
+        FCM_COMMAND_TIMEOUT_SECONDS,
+    )
+
+    private fun sendOwnerGmsThaw(): SystemServiceCommandRunner.Result = runSystemCommand(
+        SystemServiceCommands.activity(
+            "broadcast", "--user", SETTINGS_USER,
+            "-a", MIPUSH_REFRESH_ALLOWLIST_ACTION, "-p", "android",
+            "--es", "pkgName", MilletNoRestrictList.GMS_PACKAGE, "--ei", "option", "-1",
+        ),
+        FCM_COMMAND_TIMEOUT_SECONDS,
+    )
+
+    override fun getGameAllowlistValue(trigger: String): String {
+        val result = readGameAllowlist()
+        check(result.succeeded) { "Could not read game allowlist (${result.summary})" }
+        serviceLog('I', FCM_LOG_TAG, "game allowlist baseline read trigger=$trigger gmsPresent=${GameAllowlist.containsGms(result.output)}")
+        return result.output
+    }
+
+    private fun readGameAllowlist(): SystemServiceCommandRunner.Result = runSystemCommand(
+        SystemServiceCommands.settings("--user", SETTINGS_USER, "get", "system", GameAllowlist.SETTING_NAME),
+        SETTINGS_COMMAND_TIMEOUT_SECONDS,
+        preserveOutputWhitespace = true,
+    ).let { it.copy(output = it.output.removeSuffix("\n").removeSuffix("\r")) }
+
+    private fun maintainGameProtection(logTag: String): GameProtectionResult = gameProtection.maintain().also {
+        logGameProtection(it, logTag)
+    }
+
+    private fun logGameProtection(result: GameProtectionResult, logTag: String) {
+        if (result.actionTaken || result.failed) {
+            serviceLog(if (result.failed) 'E' else 'I', logTag, result.report)
+        }
+    }
+
+    private fun SystemServiceCommandRunner.Result.asResult(): Result<String> =
+        if (succeeded) Result.success(output) else Result.failure(IllegalStateException(summary))
 
     private fun logMilletRepairResult(result: String) {
         if (result.contains("FAILED")) {
@@ -872,7 +937,9 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         command: SystemServiceCommand,
         timeoutSeconds: Long,
         maxOutputLength: Int = MAX_OUTPUT_LENGTH,
-    ): SystemServiceCommandRunner.Result = systemCommands.run(command, timeoutSeconds, maxOutputLength)
+        preserveOutputWhitespace: Boolean = false,
+    ): SystemServiceCommandRunner.Result =
+        systemCommands.run(command, timeoutSeconds, maxOutputLength, preserveOutputWhitespace)
 
     private inner class CommandReport(header: String) {
         private val lines = mutableListOf(header)
@@ -936,6 +1003,7 @@ class PowerKeeperUserService : IPrivilegedService.Stub {
         private const val MAX_PENDING_LOG_CHARS = 128_000
         private const val SETTINGS_USER = "0"
         private const val GCM_RECONNECT_ACTION = "com.google.android.intent.action.GCM_RECONNECT"
+        private const val MIPUSH_REFRESH_ALLOWLIST_ACTION = "com.xiaomi.mipush.REFRESH_WHITE_LIST_ACTION"
         private const val FCM_LOG_TAG = "FCM"
         private const val FCM_POLL_LOG_TAG = "FCMPoll"
         private const val FCM_POLL_TRIGGER_PREFIX = "poll:"

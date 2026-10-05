@@ -13,6 +13,7 @@ HyperOS FCM Fix 用於防止小米 HyperOS 凍結 Google Play 服務，或過度
 - 將 Google Play 服務 (`com.google.android.gms`) 保留在 HyperOS 的隱藏無限制清單 (`MILLET_NO_RESTRICT_APP`) 中，並在 PowerKeeper 重寫該清單後修復此項目。
 - 停用已知的 Greezer GMS 限制器，並將 GMS 恢復至正常的執行階段允許清單。
 - 提供可選的 FCM 連線保護，用於 CN Google Play 服務可能不會積極重試連線的情況。
+- 提供適用於 HyperOS 4 的實驗性夜間 FCM 保護，預設關閉，並保留深度 Doze。
 - 無需要求 `QUERY_ALL_PACKAGES` 權限即可找出已安裝的第三方 FCM 應用程式。
 - 為每個已啟用的應用程式分別提供 Aurogon FCM 保護、自動解除停止、HyperOS 自動啟動和 AOSP 電池最佳化控制。
 - 在裝置重新啟動、應用程式更新或 Shizuku 重新啟動後恢復保護，並保留用於疑難排解的診斷記錄。
@@ -28,7 +29,7 @@ HyperOS FCM Fix 用於防止小米 HyperOS 凍結 Google Play 服務，或過度
 5. 變更多項設定後或進行疑難排解時，使用 **立即套用**。裝置重新啟動後，請重新啟動 Shizuku 並返回本應用程式，確認保護已恢復。
 
 > [!NOTE]
-> 如要停止使用 HyperOS FCM Fix，請先在應用程式及其自動啟動管理開關仍處於啟用狀態時，將每個受管理應用程式的 **HyperOS 自動啟動**設為希望保留的狀態。然後停用所有受管理的應用程式，重新啟動裝置後再解除安裝。停用應用程式會移除其 Aurogon 和自動解除停止規則，並將受管理的電池最佳化恢復為 **最佳化**；其餘暫時性系統變更會在重新啟動後復原。HyperOS 自動啟動是例外，會保留最後套用的狀態。
+> 如要停止使用 HyperOS FCM Fix，請先關閉已啟用的 **夜間 FCM 保護（HyperOS 4）**，並保持 Shizuku 執行，以移除本應用程式新增的豁免。在應用程式及其自動啟動管理開關仍處於啟用狀態時，將每個受管理應用程式的 **HyperOS 自動啟動**設為希望保留的狀態。然後停用所有受管理的應用程式，重新啟動裝置後再解除安裝。停用應用程式會移除其 Aurogon 和自動解除停止規則，並將受管理的電池最佳化恢復為 **最佳化**；其餘暫時性系統變更會在重新啟動後復原。HyperOS 自動啟動是例外，會保留最後套用的狀態。
 
 > [!TIP]
 > 建議先將 AOSP 電池最佳化設為 **最佳化**。僅當某個應用程式的通知仍然延遲時才使用 **無限制**，因為允許更多背景活動可能會增加耗電量。
@@ -44,6 +45,12 @@ HyperOS FCM Fix 用於防止小米 HyperOS 凍結 Google Play 服務，或過度
 UserService 不持有喚醒鎖定。裝置進入 Doze 且處理程序被暫停時，輪詢會暫停，並在處理程序再次取得執行機會後繼續，因此無法保證嚴格按照所選間隔執行。固定的 15 分鐘 WorkManager 復原工作會在 Shizuku 可用時重新建立監控，並重新套用 GMS 和 Aurogon 保護；它也會執行自動解除停止，並在啟用 FCM 連線保護時，最後要求 GMS 重新連線。WorkManager 受系統排程影響，在 Doze 期間可能延後執行。
 
 **FCM 連線保護**是一項獨立的可選功能，用於 CN GMS 可能不會積極重試連線的情況。UserService 可執行時，它會檢查 GMS 是否在 5228–5230 連接埠上有已建立的 FCM 連線；找不到連線或無法檢查時，應用程式會傳送定向的 `com.google.android.intent.action.GCM_RECONNECT` 廣播。復原工作每次實際執行時也會傳送該廣播。關閉此選項不會停用 `MILLET_NO_RESTRICT_APP` 修復。
+
+**夜間 FCM 保護（HyperOS 4）**是實驗性功能，預設關閉。它針對在中國版 HyperOS 4 上重現的額外夜間凍結；即使關閉小米原有的夜間省電，該凍結仍會發生。本功能將 GMS 保留在小米共用的遊戲預下載豁免清單中，同時保留深度 Doze。該豁免只要存在就會生效，包括白天，可能增加耗電量。
+
+現有輪詢迴圈和 15 分鐘復原工作都會檢查此清單。正常檢查僅讀取；啟動服務或修復缺少的項目時，會通知框架更新，並傳送用於擁有者 GMS 的解凍與重連廣播。即使關閉 FCM 連線保護，修復廣播仍會執行。其他項目會保留。關閉夜間選項時，僅移除本應用程式新增的 GMS；原先已有的 GMS 會保留。Shizuku 無法使用時，清理會等待其恢復。小米的下載元件可能清空清單，因此保護依賴監控能夠執行。
+
+不同 Android 使用者中的 GMS 有各自的 UID 和連線狀態。共用的套件豁免可以涵蓋分身 GMS，但本應用程式的連線檢查和復原廣播針對擁有者 GMS。已凍結分身 GMS 的即時解凍、整夜通知傳送、耗電量及重新啟動或 OTA 後的行為尚未驗證。證據與限制見 [HyperOS 4 夜間凍結調查](docs/xiaomi-hyperos4-nighttime-fcm-investigation.md)。
 
 ### 受管理的應用程式
 
@@ -70,6 +77,7 @@ UserService 不持有喚醒鎖定。裝置進入 Doze 且處理程序被暫停�
 
 - [小米 HyperOS GMS、FCM 與 Greezer 調查](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)
 - [PowerKeeper 重寫 `MILLET_NO_RESTRICT_APP` 的調查](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)
+- [HyperOS 4 夜間 GMS 凍結與無需 Root 的解決方案](docs/xiaomi-hyperos4-nighttime-fcm-investigation.md)
 
 ## 建置
 

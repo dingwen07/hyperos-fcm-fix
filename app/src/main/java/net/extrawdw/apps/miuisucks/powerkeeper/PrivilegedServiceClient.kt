@@ -1,6 +1,7 @@
 package net.extrawdw.apps.miuisucks.powerkeeper
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.ServiceConnection
 import android.os.IBinder
 import kotlinx.coroutines.CompletableDeferred
@@ -18,6 +19,11 @@ object PrivilegedServiceClient {
     private val operationMutex = Mutex()
     private var service: IPrivilegedService? = null
     private var connectionWaiter: CompletableDeferred<IPrivilegedService>? = null
+    private lateinit var settingsStore: GuardSettingsStore
+
+    internal fun init(context: Context) {
+        settingsStore = GuardSettingsStore(context.applicationContext)
+    }
 
     private val serviceArgs: Shizuku.UserServiceArgs
         get() = Shizuku.UserServiceArgs(
@@ -55,7 +61,7 @@ object PrivilegedServiceClient {
         val progressUpdates = onProgress?.let { Channel<Pair<Int, Int>>(Channel.UNLIMITED) }
         val progressCollector = progressUpdates?.let { updates ->
             launch {
-                for ((completed, total) in updates) onProgress?.invoke(completed, total)
+                for ((completed, total) in updates) onProgress.invoke(completed, total)
             }
         }
         val progressCallback = progressUpdates?.let { updates ->
@@ -67,7 +73,8 @@ object PrivilegedServiceClient {
         }
         try {
             withService("enforce", trigger) { connectedService ->
-                connectedService.configureFcmPolling(
+                val configurationReport = configureProtection(
+                    connectedService,
                     milletPollingIntervalMillis,
                     fcmReconnectEnabled,
                     trigger,
@@ -77,7 +84,7 @@ object PrivilegedServiceClient {
                 val orderedPolicies = policies
                     .filter(AppPolicy::appEnabled)
                     .sortedBy(AppPolicy::packageName)
-                connectedService.enforceBatched(
+                val enforcementReport = connectedService.enforceBatched(
                     aurogonPackages.distinct().sorted().toTypedArray(),
                     orderedPolicies.map(AppPolicy::packageName).toTypedArray(),
                     orderedPolicies.map(AppPolicy::autostartManaged).toBooleanArray(),
@@ -88,6 +95,7 @@ object PrivilegedServiceClient {
                     trigger,
                     progressCallback,
                 )
+                "$configurationReport\n$enforcementReport"
             }
         } finally {
             progressUpdates?.close()
@@ -102,15 +110,17 @@ object PrivilegedServiceClient {
         trigger: String,
     ): String =
         withService("startFcmProtection", trigger) { connectedService ->
-            connectedService.configureFcmPolling(
+            val configurationReport = configureProtection(
+                connectedService,
                 milletPollingIntervalMillis,
                 fcmReconnectEnabled,
                 trigger,
             )
-            connectedService.startFcmProtection(
+            val protectionReport = connectedService.startFcmProtection(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
             )
+            "$configurationReport\n$protectionReport"
         }
 
     suspend fun unstop(
@@ -133,15 +143,17 @@ object PrivilegedServiceClient {
         trigger: String,
     ): String =
         withService("reconcileAurogon", trigger) { connectedService ->
-            connectedService.configureFcmPolling(
+            val configurationReport = configureProtection(
+                connectedService,
                 milletPollingIntervalMillis,
                 fcmReconnectEnabled,
                 trigger,
             )
-            connectedService.reconcileAurogon(
+            val aurogonReport = connectedService.reconcileAurogon(
                 aurogonPackages.distinct().sorted().toTypedArray(),
                 trigger,
             )
+            "$configurationReport\n$aurogonReport"
         }
 
     suspend fun configureFcmPolling(
@@ -150,8 +162,41 @@ object PrivilegedServiceClient {
         trigger: String,
     ): String =
         withService("configureFcmPolling", trigger) { connectedService ->
-            connectedService.configureFcmPolling(intervalMillis, fcmReconnectEnabled, trigger)
+            configureProtection(connectedService, intervalMillis, fcmReconnectEnabled, trigger)
         }
+
+    private fun configureProtection(
+        connectedService: IPrivilegedService,
+        intervalMillis: Long,
+        fcmReconnectEnabled: Boolean,
+        trigger: String,
+    ): String {
+        val enabled = settingsStore.loadNighttimeFcmProtectionEnabled()
+        var preexisting = settingsStore.loadNighttimeGmsPreexisting()
+        val ownershipError = runCatching {
+            if (enabled && preexisting == null) {
+                val value = connectedService.getGameAllowlistValue(trigger)
+                val baseline = GameAllowlist.containsGms(value)
+                settingsStore.saveNighttimeGmsPreexisting(baseline)
+                preexisting = baseline
+            }
+        }.exceptionOrNull()
+        // Preserve ordinary protection when the optional feature's initial read fails.
+        val report = connectedService.configureFcmPolling(
+            intervalMillis,
+            fcmReconnectEnabled,
+            enabled && ownershipError == null,
+            preexisting == false,
+            trigger,
+        )
+        if (!enabled && preexisting != null && !report.contains("FAILED")) {
+            settingsStore.clearNighttimeGmsPreexisting()
+        }
+        return if (ownershipError == null) report else {
+            "$report\nHyperOS 4 nighttime protection: FAILED: could not record initial membership " +
+                "(${ownershipError.message ?: ownershipError.javaClass.simpleName})"
+        }
+    }
 
     suspend fun forceFcmReconnect(trigger: String): String =
         withService("forceFcmReconnect", trigger) { connectedService ->
@@ -268,5 +313,5 @@ object PrivilegedServiceClient {
     private const val CONNECTION_TIMEOUT_MILLIS = 15_000L
     // Increment whenever the UserService implementation or AIDL changes so Shizuku replaces the
     // daemon process instead of retaining code loaded from an older APK.
-    private const val USER_SERVICE_VERSION = 18
+    private const val USER_SERVICE_VERSION = 19
 }

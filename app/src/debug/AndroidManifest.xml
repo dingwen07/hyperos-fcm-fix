@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- Allow UI fixtures on emulators. MainActivity still checks Xiaomi compatibility. -->
+        <uses-library android:name="com.miui.system" android:required="false"
+            tools:replace="android:required" />
+    </application>
+</manifest>

@@ -13,6 +13,7 @@ HyperOS FCM Fix prevents Xiaomi HyperOS from freezing Google Play services or ov
 - Keeps Google Play services (`com.google.android.gms`) in HyperOS's hidden no-restrictions list (`MILLET_NO_RESTRICT_APP`) and repairs the entry when PowerKeeper rewrites the list.
 - Disables the known Greezer GMS limiter and restores GMS to its normal runtime allowlist.
 - Offers optional FCM Connection Protection for CN Google Play services builds that may not reconnect promptly.
+- Offers experimental nighttime FCM protection for HyperOS 4, off by default, while keeping deep Doze enabled.
 - Finds installed third-party FCM apps without requesting `QUERY_ALL_PACKAGES`.
 - Provides separate Aurogon FCM protection, Auto unstop, HyperOS Autostart, and AOSP battery-optimization controls for each enabled app.
 - Restores protection after reboots, app updates, or Shizuku restarts, and keeps diagnostic records for troubleshooting.
@@ -28,7 +29,7 @@ The app runs only in the owner profile on a Xiaomi device with HyperOS. Its mani
 5. Use **Apply now** after changing several settings or while troubleshooting. After a reboot, restart Shizuku and return to the app to confirm that protection has resumed.
 
 > [!NOTE]
-> To stop using HyperOS FCM Fix, first set each managed app's **HyperOS Autostart** to the state you want while the app and its Autostart management switch are still enabled. Then disable every managed app and reboot before uninstalling. Disabling an app removes its Aurogon and Auto unstop rules and returns managed battery optimization to **Optimized**; the remaining temporary system changes reset after reboot. HyperOS Autostart is the exception and keeps the last applied state.
+> To stop using HyperOS FCM Fix, first turn off **Nighttime FCM protection (HyperOS 4)** if enabled, with Shizuku running so its app-added exemption can be removed. Set each managed app's **HyperOS Autostart** to the state you want while the app and its Autostart management switch are still enabled. Then disable every managed app and reboot before uninstalling. Disabling an app removes its Aurogon and Auto unstop rules and returns managed battery optimization to **Optimized**; the remaining temporary system changes reset after reboot. HyperOS Autostart is the exception and keeps the last applied state.
 
 > [!TIP]
 > Start with AOSP battery optimization set to **Optimized**. Use **Unrestricted** only for an app whose notifications remain delayed, because allowing more background activity can increase battery use.
@@ -44,6 +45,12 @@ Every full FCM protection pass also issues the equivalent of `dumpsys greezer IM
 The UserService does not hold a wake lock. If Android suspends its process during Doze, polling pauses and resumes when the process can run again, so the selected interval is not exact. A fixed 15-minute WorkManager recovery job re-establishes the monitor and reapplies GMS and Aurogon protection when Shizuku is available; it also runs Auto unstop and, when FCM Connection Protection is enabled, finishes by requesting a GMS reconnect. WorkManager is subject to system scheduling and may run later during Doze.
 
 **FCM Connection Protection** is a separate, optional workaround for CN GMS builds that may not reconnect promptly. While the UserService is runnable, it checks whether GMS has an established FCM socket on ports 5228–5230 and sends a targeted `com.google.android.intent.action.GCM_RECONNECT` broadcast when no connection is found or the check is unavailable. The recovery job also sends the broadcast whenever it actually runs. Turning this option off does not disable the `MILLET_NO_RESTRICT_APP` repair.
+
+**Nighttime FCM protection (HyperOS 4)** is experimental and off by default. It addresses an additional nighttime freeze reproduced on a China HyperOS 4 build even with Xiaomi's older nighttime battery saving disabled. It maintains GMS in Xiaomi's shared game predownload exemption list, keeping deep Doze enabled. The exemption applies whenever present, including daytime, and may increase battery use.
+
+The existing polling loop and 15-minute recovery job both check this list. Healthy checks only read it; startup or a missing-entry repair signals the framework and sends owner-GMS thaw and reconnect broadcasts. Those repair broadcasts run even if FCM Connection Protection is off. Other entries are retained. Turning the nighttime option off removes GMS only if this app introduced it; preexisting GMS is preserved. Cleanup waits for Shizuku if unavailable. Xiaomi's download components can clear the list, so protection depends on the monitor being able to run.
+
+GMS has separate UIDs and transport state in different Android profiles. The shared package exemption can cover clone GMS, but the app's socket checks and recovery broadcasts target owner GMS. Immediate thaw of already-frozen clone GMS, overnight delivery, battery cost, and reboot/OTA behavior remain unverified. See the [HyperOS 4 nighttime investigation](docs/xiaomi-hyperos4-nighttime-fcm-investigation.md) for evidence and limits.
 
 ### Managed apps
 
@@ -70,6 +77,7 @@ Open **Diagnostics** at the bottom of the main screen to inspect, refresh, copy,
 
 - [Xiaomi HyperOS GMS, FCM, and Greezer investigation](docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md)
 - [PowerKeeper `MILLET_NO_RESTRICT_APP` rewrite investigation](docs/xiaomi-millet-no-restrict-app-rewrite-investigation.md)
+- [HyperOS 4 nighttime GMS freezing and non-root workaround](docs/xiaomi-hyperos4-nighttime-fcm-investigation.md)
 
 ## Build
 

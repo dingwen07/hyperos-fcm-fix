@@ -65,9 +65,11 @@
     <string name="gms_status_protected">Protection active</string>
     <string name="gms_status_needs_attention">Needs attention</string>
     <string name="millet_polling_frequency">Polling frequency</string>
-    <string name="millet_polling_frequency_description">How often the Shizuku User Service checks and repairs this setting and, when enabled, checks the FCM connection. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
+    <string name="millet_polling_frequency_description">How often the Shizuku User Service repairs protection settings and checks enabled FCM protections. The polling loop stays inside the service and does not create or hold a Wake Lock.</string>
     <string name="fcm_reconnect_protection">FCM Connection Protection</string>
     <string name="fcm_reconnect_protection_description">Checks the FCM connection while monitoring is active and asks Google Play services to reconnect during periodic recovery.</string>
+    <string name="nighttime_fcm_protection">Nighttime FCM protection (HyperOS 4)</string>
+    <string name="nighttime_fcm_protection_description">Experimental workaround for extra nighttime freezing of Google Play services on HyperOS 4. Keeps deep Doze enabled. Off by default; may increase battery use.</string>
     <string name="polling_interval_seconds">%1$ss</string>
     <string name="millet_no_restrict_description">Apps currently exempt from HyperOS background restrictions.</string>
     <string name="millet_no_restrict_empty">No packages in the list.</string>
@@ -124,6 +126,9 @@
     <string name="fcm_reconnect_enabled_message">FCM Connection Protection enabled.</string>
     <string name="fcm_reconnect_disabled_message">FCM Connection Protection disabled.</string>
     <string name="fcm_reconnect_apply_failed_message">Saved FCM Connection Protection, but could not update the running Shizuku service: %1$s</string>
+    <string name="nighttime_fcm_enabled_message">Nighttime FCM protection saved as enabled. Shizuku applies it when available.</string>
+    <string name="nighttime_fcm_disabled_message">Nighttime FCM protection saved as disabled. Shizuku removes the app-added exemption when available.</string>
+    <string name="nighttime_fcm_apply_failed_message">Saved nighttime FCM protection, but could not apply the change: %1$s</string>
     <string name="applying_settings_message">Applying settings…</string>
     <string name="applying_progress">Applying %1$d / %2$d</string>
     <string name="settings_applied_message">Settings applied.</string>

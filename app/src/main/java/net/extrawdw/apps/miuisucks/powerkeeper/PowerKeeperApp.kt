@@ -6,6 +6,7 @@ class PowerKeeperApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLog.init(this)
+        PrivilegedServiceClient.init(this)
         AppLog.i(
             "App",
             "onCreate version=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE}) pid=${android.os.Process.myPid()}",

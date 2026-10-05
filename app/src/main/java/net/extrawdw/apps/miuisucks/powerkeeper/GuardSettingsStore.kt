@@ -9,6 +9,7 @@ data class GuardSettings(
     val milletPollingIntervalMillis: Long,
     val fcmReconnectEnabled: Boolean,
     val androidUsers: List<AndroidUserSelection>,
+    val nighttimeFcmProtectionEnabled: Boolean = false,
 ) {
     fun policyFor(packageName: String): AppPolicy =
         appPolicies[packageName] ?: AppPolicyDefaults.forPackage(packageName)
@@ -56,6 +57,7 @@ class GuardSettingsStore(context: Context) {
             DEFAULT_FCM_RECONNECT_ENABLED,
         ),
         androidUsers = loadAndroidUsers(),
+        nighttimeFcmProtectionEnabled = loadNighttimeFcmProtectionEnabled(),
     )
 
     fun loadAppPolicies(): Map<String, AppPolicy> {
@@ -146,6 +148,33 @@ class GuardSettingsStore(context: Context) {
         preferences.edit { putBoolean(KEY_FCM_RECONNECT_ENABLED, enabled) }
     }
 
+    fun setNighttimeFcmProtectionEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_NIGHTTIME_FCM_PROTECTION_ENABLED, enabled) }
+    }
+
+    fun loadNighttimeFcmProtectionEnabled(): Boolean = preferences.getBoolean(
+        KEY_NIGHTTIME_FCM_PROTECTION_ENABLED,
+        DEFAULT_NIGHTTIME_FCM_PROTECTION_ENABLED,
+    )
+
+    fun loadNighttimeGmsPreexisting(): Boolean? =
+        if (preferences.contains(KEY_NIGHTTIME_GMS_PREEXISTING)) {
+            preferences.getBoolean(KEY_NIGHTTIME_GMS_PREEXISTING, true)
+        } else null
+
+    /** Persist ownership before the shell daemon can modify the shared list. */
+    fun saveNighttimeGmsPreexisting(preexisting: Boolean) {
+        check(preferences.edit().putBoolean(KEY_NIGHTTIME_GMS_PREEXISTING, preexisting).commit()) {
+            "Could not save nighttime protection ownership"
+        }
+    }
+
+    fun clearNighttimeGmsPreexisting() {
+        check(preferences.edit().remove(KEY_NIGHTTIME_GMS_PREEXISTING).commit()) {
+            "Could not clear nighttime protection ownership"
+        }
+    }
+
     fun loadAndroidUsers(): List<AndroidUserSelection> = AndroidUserSelections.decode(
         preferences.getString(KEY_ANDROID_USERS, null),
     )
@@ -217,6 +246,7 @@ class GuardSettingsStore(context: Context) {
         const val MINIMUM_INTERVAL_MINUTES = 15L
         const val DEFAULT_INTERVAL_MINUTES = 60L
         const val DEFAULT_FCM_RECONNECT_ENABLED = true
+        const val DEFAULT_NIGHTTIME_FCM_PROTECTION_ENABLED = false
 
         fun isPeriodicEnforcementEnabled(intervalMinutes: Long): Boolean =
             intervalMinutes > DISABLED_INTERVAL_MINUTES
@@ -234,6 +264,8 @@ class GuardSettingsStore(context: Context) {
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
         private const val KEY_MILLET_POLLING_INTERVAL_MILLIS = "millet_polling_interval_millis"
         private const val KEY_FCM_RECONNECT_ENABLED = "fcm_reconnect_enabled"
+        private const val KEY_NIGHTTIME_FCM_PROTECTION_ENABLED = "nighttime_fcm_protection_enabled"
+        private const val KEY_NIGHTTIME_GMS_PREEXISTING = "nighttime_gms_preexisting"
         private const val KEY_ANDROID_USERS = "android_users"
         private const val KEY_LAST_RUN_TIMESTAMP = "last_run_timestamp"
         private const val KEY_LAST_RUN_SUCCEEDED = "last_run_succeeded"

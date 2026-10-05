@@ -6,10 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.verticalScroll
@@ -36,8 +37,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -54,9 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -115,8 +112,6 @@ data class GuardUiState(
     val message: String? = null,
     val messageIsError: Boolean = false,
 )
-
-private enum class GuardTab { HOME, APPS }
 
 private data class StartupData(
     val compatibility: DeviceCompatibility,
@@ -194,6 +189,7 @@ class MainActivity : ComponentActivity() {
                         onRefreshProtectionStatus = ::refreshProtectionStatus,
                         onMilletPollingIntervalSelected = ::setMilletPollingInterval,
                         onFcmReconnectEnabledChanged = ::setFcmReconnectEnabled,
+                        onNighttimeFcmProtectionEnabledChanged = ::setNighttimeFcmProtectionEnabled,
                         onOpenFcmDiagnostics = ::openFcmDiagnostics,
                         onAppEnabledChanged = ::setAppEnabled,
                         onAurogonChanged = ::setAurogonEnabled,
@@ -637,6 +633,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun setNighttimeFcmProtectionEnabled(enabled: Boolean) {
+        settingsStore.setNighttimeFcmProtectionEnabled(enabled)
+        refreshState(
+            getString(
+                if (enabled) R.string.nighttime_fcm_enabled_message else R.string.nighttime_fcm_disabled_message,
+            ),
+            messageIsError = false,
+        )
+        if (!uiState.shizuku.granted) return
+
+        lifecycleScope.launch {
+            runCatching {
+                val report = PrivilegedServiceClient.configureFcmPolling(
+                    uiState.settings.milletPollingIntervalMillis,
+                    uiState.settings.fcmReconnectEnabled,
+                    TRIGGER_UI_NIGHTTIME_FCM,
+                )
+                check(!report.contains("FAILED")) { report }
+            }.onFailure { error ->
+                uiState = uiState.copy(
+                    message = getString(R.string.nighttime_fcm_apply_failed_message, error.uiFailureMessage()),
+                    messageIsError = true,
+                )
+            }
+        }
+    }
+
     private fun maybeApplyStaleSettings() {
         if (!uiState.shizuku.granted || uiState.applying) return
         if (!GuardSettingsStore.isPeriodicEnforcementEnabled(uiState.settings.intervalMinutes)) return
@@ -889,6 +912,7 @@ class MainActivity : ComponentActivity() {
         private const val TRIGGER_UI_PROTECTION_STATUS = "ui:protection-status"
         private const val TRIGGER_UI_MILLET_POLLING_INTERVAL = "ui:millet-polling-interval"
         private const val TRIGGER_UI_FCM_RECONNECT = "ui:fcm-reconnect"
+        private const val TRIGGER_UI_NIGHTTIME_FCM = "ui:nighttime-fcm"
         private const val TRIGGER_UI_LOGS = "ui:logs-cleared"
         private const val TRIGGER_UI_APP_CHANGE = "ui:app-change"
         private const val TRIGGER_UI_STALE_PERIODIC = "ui:stale-periodic"
@@ -915,7 +939,7 @@ private fun StartupCheckScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GuardApp(
+internal fun GuardApp(
     state: GuardUiState,
     onRequestShizuku: () -> Unit,
     onOpenShizuku: () -> Unit,
@@ -925,6 +949,7 @@ private fun GuardApp(
     onRefreshProtectionStatus: () -> Unit,
     onMilletPollingIntervalSelected: (Long) -> Unit,
     onFcmReconnectEnabledChanged: (Boolean) -> Unit,
+    onNighttimeFcmProtectionEnabledChanged: (Boolean) -> Unit,
     onOpenFcmDiagnostics: () -> Unit,
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
@@ -937,112 +962,123 @@ private fun GuardApp(
     onLogsCleared: () -> Unit,
 ) {
     var showingLogs by rememberSaveable { mutableStateOf(false) }
-    var selectedTab by rememberSaveable { mutableStateOf(GuardTab.HOME) }
-    BackHandler(enabled = selectedTab == GuardTab.APPS) { selectedTab = GuardTab.HOME }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    if (selectedTab == GuardTab.HOME) {
-                        Column {
-                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                stringResource(R.string.app_subtitle),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+    var appsQuery by rememberSaveable { mutableStateOf("") }
+    GuardNavigation { selectedTab ->
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val inlineSearch = maxWidth >= 600.dp && maxWidth > maxHeight
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            if (selectedTab == GuardTab.HOME) {
+                                Column {
+                                    Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        stringResource(R.string.app_subtitle),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(stringResource(R.string.apps_title), fontWeight = FontWeight.SemiBold)
+                                    if (inlineSearch) AppSearchField(appsQuery, { appsQuery = it }, Modifier.weight(1f))
+                                }
+                            }
+                        },
+                        actions = {
+                            TextButton(onClick = onOpenFcmDiagnostics) {
+                                Text(stringResource(R.string.fcm_diagnostics))
+                            }
+                        },
+                    )
+                },
+            ) { innerPadding ->
+                when (selectedTab) {
+                    GuardTab.HOME -> AdaptiveHomeLayout(
+                        modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+                        supportingPane = {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                item {
+                                    MilletNoRestrictCard(
+                                        state = state,
+                                        onCheckValue = onRefreshProtectionStatus,
+                                        onPollingIntervalSelected = onMilletPollingIntervalSelected,
+                                        onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
+                                        onNighttimeFcmProtectionEnabledChanged = onNighttimeFcmProtectionEnabledChanged,
+                                    )
+                                }
+                            }
+                        },
+                    ) { wide ->
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = 16.dp,
+                                top = 8.dp,
+                                end = 16.dp,
+                                bottom = 24.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
+                            if (state.shizuku.adbPermissionLimited) {
+                                item { AdbPermissionWarningCard() }
+                            }
+                            item {
+                                ProtectionCard(
+                                    state = state,
+                                    onIntervalSelected = onIntervalSelected,
+                                    onApplyNow = onApplyNow,
+                                )
+                            }
+                            if (!wide) {
+                                item {
+                                    MilletNoRestrictCard(
+                                        state = state,
+                                        onCheckValue = onRefreshProtectionStatus,
+                                        onPollingIntervalSelected = onMilletPollingIntervalSelected,
+                                        onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
+                                        onNighttimeFcmProtectionEnabledChanged = onNighttimeFcmProtectionEnabledChanged,
+                                    )
+                                }
+                            }
+                            item {
+                                AndroidUsersCard(
+                                    state = state,
+                                    onRefreshUsers = onRefreshAndroidUsers,
+                                    onUserEnabledChanged = onAndroidUserEnabledChanged,
+                                )
+                            }
+                            state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
+                            item { LogsCard(onOpenLogs = { showingLogs = true }) }
                         }
-                    } else {
-                        Text(stringResource(R.string.apps_title), fontWeight = FontWeight.SemiBold)
                     }
-                },
-                actions = {
-                    TextButton(onClick = onOpenFcmDiagnostics) {
-                        Text(stringResource(R.string.fcm_diagnostics))
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = selectedTab == GuardTab.HOME,
-                    onClick = { selectedTab = GuardTab.HOME },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.Home,
-                            contentDescription = stringResource(R.string.home),
-                        )
-                    },
-                    label = { Text(stringResource(R.string.home)) },
-                )
-                NavigationBarItem(
-                    selected = selectedTab == GuardTab.APPS,
-                    onClick = { selectedTab = GuardTab.APPS },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.Apps,
-                            contentDescription = stringResource(R.string.apps_title),
-                        )
-                    },
-                    label = { Text(stringResource(R.string.apps_title)) },
-                )
-            }
-        },
-    ) { innerPadding ->
-        when (selectedTab) {
-            GuardTab.HOME -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = innerPadding.calculateTopPadding() + 8.dp,
-                    end = 16.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 24.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                item { ShizukuCard(state, onRequestShizuku, onOpenShizuku) }
-                if (state.shizuku.adbPermissionLimited) {
-                    item { AdbPermissionWarningCard() }
-                }
-                item {
-                    ProtectionCard(
-                        state = state,
-                        onIntervalSelected = onIntervalSelected,
-                        onApplyNow = onApplyNow,
-                    )
-                }
-                item {
-                    MilletNoRestrictCard(
-                        state = state,
-                        onCheckValue = onRefreshProtectionStatus,
-                        onPollingIntervalSelected = onMilletPollingIntervalSelected,
-                        onFcmReconnectEnabledChanged = onFcmReconnectEnabledChanged,
-                    )
-                }
-                item {
-                    AndroidUsersCard(
-                        state = state,
-                        onRefreshUsers = onRefreshAndroidUsers,
-                        onUserEnabledChanged = onAndroidUserEnabledChanged,
-                    )
-                }
-                state.lastRun?.let { lastRun -> item { LastRunCard(lastRun) } }
-                item { LogsCard(onOpenLogs = { showingLogs = true }) }
-            }
 
-            GuardTab.APPS -> AppManagementScreen(
-                apps = state.installedApps,
-                policies = state.settings.appPolicies,
-                modifier = Modifier.padding(innerPadding),
-                onAppEnabledChanged = onAppEnabledChanged,
-                onAurogonChanged = onAurogonChanged,
-                onAutoUnstopChanged = onAutoUnstopChanged,
-                onAutostartManagedChanged = onAutostartManagedChanged,
-                onAutostartChanged = onAutostartChanged,
-                onDozeManagedChanged = onDozeManagedChanged,
-                onDozeChanged = onDozeChanged,
-            )
+                    GuardTab.APPS -> AppManagementScreen(
+                        apps = state.installedApps,
+                        policies = state.settings.appPolicies,
+                        query = appsQuery,
+                        onQueryChanged = { appsQuery = it },
+                        showSearchField = !inlineSearch,
+                        modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+                        onAppEnabledChanged = onAppEnabledChanged,
+                        onAurogonChanged = onAurogonChanged,
+                        onAutoUnstopChanged = onAutoUnstopChanged,
+                        onAutostartManagedChanged = onAutostartManagedChanged,
+                        onAutostartChanged = onAutostartChanged,
+                        onDozeManagedChanged = onDozeManagedChanged,
+                        onDozeChanged = onDozeChanged,
+                    )
+                }
+            }
         }
     }
     if (showingLogs) {
@@ -1333,6 +1369,7 @@ private fun MilletNoRestrictCard(
     onCheckValue: () -> Unit,
     onPollingIntervalSelected: (Long) -> Unit,
     onFcmReconnectEnabledChanged: (Boolean) -> Unit,
+    onNighttimeFcmProtectionEnabledChanged: (Boolean) -> Unit,
 ) {
     val rawValue = state.milletNoRestrictValue
     val readFailed = rawValue?.startsWith("FAILED:") == true
@@ -1420,6 +1457,31 @@ private fun MilletNoRestrictCard(
                 )
             }
             Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.nighttime_fcm_protection),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        stringResource(R.string.nighttime_fcm_protection_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.settings.nighttimeFcmProtectionEnabled,
+                    onCheckedChange = onNighttimeFcmProtectionEnabledChanged,
+                    enabled = !state.applying,
+                )
+            }
             HorizontalDivider()
             Text(
                 MilletNoRestrictList.SETTING_NAME,

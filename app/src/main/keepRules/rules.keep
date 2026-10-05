@@ -15,3 +15,8 @@
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.IPrivilegedService$Stub { *; }
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.IEnforcementProgressCallback { *; }
 -keep class net.extrawdw.apps.miuisucks.powerkeeper.IEnforcementProgressCallback$Stub { *; }
+
+# Android Navigation 3 saves NavKey class names and restores them with Class.forName.
+# Keep the destination name stable across optimized builds; kotlinx.serialization's
+# bundled consumer rules retain the companion's serializer lookup members.
+-keepnames class net.extrawdw.apps.miuisucks.powerkeeper.GuardTab

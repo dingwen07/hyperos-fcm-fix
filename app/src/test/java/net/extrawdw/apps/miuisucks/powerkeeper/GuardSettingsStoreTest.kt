@@ -34,6 +34,11 @@ class GuardSettingsStoreTest {
     }
 
     @Test
+    fun nighttimeProtectionDefaultsDisabled() {
+        assertFalse(GuardSettingsStore.DEFAULT_NIGHTTIME_FCM_PROTECTION_ENABLED)
+    }
+
+    @Test
     fun appPolicyCodecPreservesIndependentControls() {
         val policy = AppPolicy(
             packageName = "com.example.push",

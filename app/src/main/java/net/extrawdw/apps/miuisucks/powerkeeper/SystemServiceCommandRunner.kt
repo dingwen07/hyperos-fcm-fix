@@ -30,6 +30,7 @@ internal class SystemServiceCommandRunner {
         command: SystemServiceCommand,
         timeoutSeconds: Long,
         maxOutputLength: Int,
+        preserveOutputWhitespace: Boolean = false,
     ): Result {
         val binder = resolveService(command.serviceName)
             ?: return Result.failure("Binder service ${command.serviceName} is unavailable")
@@ -46,7 +47,7 @@ internal class SystemServiceCommandRunner {
         val input = runCatching { FileInputStream(NULL_DEVICE) }
             .getOrElse { return Result.failure(it.message ?: it.javaClass.simpleName) }
         return input.use { inputStream ->
-            runWithOutput(timeoutSeconds, maxOutputLength) { output ->
+            runWithOutput(timeoutSeconds, maxOutputLength, preserveOutputWhitespace) { output ->
                 shellCommandMethod.invoke(
                     binder,
                     inputStream.fd,
@@ -94,6 +95,7 @@ internal class SystemServiceCommandRunner {
     private fun runWithOutput(
         timeoutSeconds: Long,
         maxOutputLength: Int,
+        preserveOutputWhitespace: Boolean = false,
         invocation: (FileDescriptor) -> Int,
     ): Result {
         require(timeoutSeconds > 0) { "Timeout must be positive" }
@@ -119,7 +121,8 @@ internal class SystemServiceCommandRunner {
             } catch (error: Throwable) {
                 readerFailure.set(error)
             } finally {
-                output.set(captured.toString(Charsets.UTF_8.name()).trim())
+                val decoded = captured.toString(Charsets.UTF_8.name())
+                output.set(if (preserveOutputWhitespace) decoded else decoded.trim())
             }
         }
         val future = invocationExecutor.submit<Int> { invocation(writeEnd.fileDescriptor) }
@@ -146,7 +149,9 @@ internal class SystemServiceCommandRunner {
         return Result(
             completed = completed,
             exitCode = if (failure == null && completed) exitCode else UNKNOWN_EXIT_CODE,
-            output = listOf(captured, failureMessage).filter(String::isNotBlank).joinToString("\n"),
+            output = if (failureMessage.isEmpty()) captured else {
+                listOf(captured, failureMessage).filter(String::isNotBlank).joinToString("\n")
+            },
         )
     }
 

@@ -73,7 +73,6 @@ data class AppPolicy(
 
 object AppPolicyDefaults {
     val HYPEROS_AUTO_UNRESTRICTED_PACKAGES: Set<String> = setOf(
-        "com.tencent.mm",
         "org.telegram.messenger",
     )
 

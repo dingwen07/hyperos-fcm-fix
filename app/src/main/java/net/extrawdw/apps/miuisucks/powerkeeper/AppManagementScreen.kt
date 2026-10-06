@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3AdaptiveApi::class)
@@ -69,6 +71,7 @@ fun AppManagementScreen(
     onQueryChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
     showSearchField: Boolean = true,
+    bottomContentPadding: Dp = 0.dp,
     directive: PaneScaffoldDirective = calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth(currentWindowAdaptiveInfoV2()),
     onAppEnabledChanged: (String, Boolean) -> Unit,
     onAurogonChanged: (String, Boolean) -> Unit,
@@ -101,7 +104,9 @@ fun AppManagementScreen(
     val disabled = sorted.filterNot { policies.policyFor(it.packageName).appEnabled }
 
     AdaptiveDetailLayout(
-        selectedKey = selectedPackage,
+        // Restore the selection while apps load, but only present a detail with its content.
+        // An empty restored sheet can retain its small expansion anchor after loading completes.
+        selectedKey = configFor?.packageName,
         onDismiss = { selectedPackage = null },
         title = configFor?.label.orEmpty(),
         modifier = modifier,
@@ -113,6 +118,7 @@ fun AppManagementScreen(
                     policy = policies.policyFor(app.packageName),
                     scrollState = policyScroll,
                     showTitle = !isPane,
+                    bottomContentPadding = if (isPane) bottomContentPadding else 0.dp,
                     onAurogonChanged = onAurogonChanged,
                     onAutoUnstopChanged = onAutoUnstopChanged,
                     onAutostartManagedChanged = onAutostartManagedChanged,
@@ -141,7 +147,10 @@ fun AppManagementScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> LazyColumn(Modifier.fillMaxSize().testTag("apps-list")) {
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize().testTag("apps-list"),
+                    contentPadding = PaddingValues(bottom = bottomContentPadding),
+                ) {
                     if (enabled.isNotEmpty()) {
                         stickyHeader { AppSectionHeader(stringResource(R.string.apps_section_enabled), enabled.size) }
                         items(enabled, key = InstalledFcmApp::packageName) { app ->
@@ -241,6 +250,7 @@ private fun AppPolicyContent(
     policy: AppPolicy,
     scrollState: ScrollState,
     showTitle: Boolean,
+    bottomContentPadding: Dp,
     onAurogonChanged: (String, Boolean) -> Unit,
     onAutoUnstopChanged: (String, Boolean) -> Unit,
     onAutostartManagedChanged: (String, Boolean) -> Unit,
@@ -252,7 +262,7 @@ private fun AppPolicyContent(
         Modifier
             .fillMaxWidth()
             .verticalScroll(scrollState)
-            .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
+            .padding(start = 20.dp, end = 20.dp, bottom = 32.dp + bottomContentPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (showTitle) Text(app.label, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

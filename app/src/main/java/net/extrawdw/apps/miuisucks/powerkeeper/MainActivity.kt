@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,8 +58,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
@@ -107,6 +111,7 @@ data class GuardUiState(
     val applying: Boolean = false,
     val applyProgress: ApplyProgress? = null,
     val milletNoRestrictValue: String? = null,
+    val nighttimeGameAllowlistValue: String? = null,
     val checkingMilletValue: Boolean = false,
     val refreshingAndroidUsers: Boolean = false,
     val message: String? = null,
@@ -172,6 +177,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        window.isNavigationBarContrastEnforced = false
 
         setContent {
             MIUIPowerKeeperFixTheme {
@@ -635,6 +641,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setNighttimeFcmProtectionEnabled(enabled: Boolean) {
         settingsStore.setNighttimeFcmProtectionEnabled(enabled)
+        uiState = uiState.copy(nighttimeGameAllowlistValue = null)
         refreshState(
             getString(
                 if (enabled) R.string.nighttime_fcm_enabled_message else R.string.nighttime_fcm_disabled_message,
@@ -651,8 +658,12 @@ class MainActivity : ComponentActivity() {
                     TRIGGER_UI_NIGHTTIME_FCM,
                 )
                 check(!report.contains("FAILED")) { report }
+                readNighttimeProtectionStatus()
+            }.onSuccess { value ->
+                uiState = uiState.copy(nighttimeGameAllowlistValue = value)
             }.onFailure { error ->
                 uiState = uiState.copy(
+                    nighttimeGameAllowlistValue = "FAILED: ${error.uiFailureMessage()}",
                     message = getString(R.string.nighttime_fcm_apply_failed_message, error.uiFailureMessage()),
                     messageIsError = true,
                 )
@@ -841,28 +852,31 @@ class MainActivity : ComponentActivity() {
         uiState = uiState.copy(checkingMilletValue = true)
         lifecycleScope.launch {
             runCatching {
-                PrivilegedServiceClient.configureFcmPolling(
+                val configurationReport = PrivilegedServiceClient.configureFcmPolling(
                     settings.milletPollingIntervalMillis,
                     settings.fcmReconnectEnabled,
                     TRIGGER_UI_PROTECTION_STATUS,
                 )
-                PrivilegedServiceClient.getMilletNoRestrictValue(TRIGGER_UI_PROTECTION_STATUS)
+                val milletValue = PrivilegedServiceClient.getMilletNoRestrictValue(TRIGGER_UI_PROTECTION_STATUS)
+                milletValue to readNighttimeProtectionStatus(configurationReport)
             }
-                .onSuccess { value ->
-                    val failed = value.startsWith("FAILED:")
+                .onSuccess { (value, nighttimeValue) ->
+                    val failedValue = listOfNotNull(value, nighttimeValue).firstOrNull { it.startsWith("FAILED:") }
                     uiState = uiState.copy(
                         milletNoRestrictValue = value,
+                        nighttimeGameAllowlistValue = nighttimeValue,
                         checkingMilletValue = false,
-                        message = if (failed) {
-                            getString(R.string.protection_status_failed_message, value.removePrefix("FAILED:").trim())
+                        message = if (failedValue != null) {
+                            getString(R.string.protection_status_failed_message, failedValue.removePrefix("FAILED:").trim())
                         } else {
                             uiState.message
                         },
-                        messageIsError = if (failed) true else uiState.messageIsError,
+                        messageIsError = if (failedValue != null) true else uiState.messageIsError,
                     )
                 }
                 .onFailure { error ->
                     uiState = uiState.copy(
+                        nighttimeGameAllowlistValue = "FAILED: ${error.uiFailureMessage()}",
                         checkingMilletValue = false,
                         message = getString(
                             R.string.protection_status_failed_message,
@@ -872,6 +886,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
         }
+    }
+
+    private suspend fun readNighttimeProtectionStatus(configurationReport: String? = null): String? {
+        if (!settingsStore.loadNighttimeFcmProtectionEnabled()) return null
+        if (configurationReport?.contains("FAILED") == true) return "FAILED: $configurationReport"
+        return runCatching {
+            PrivilegedServiceClient.getGameAllowlistValue(TRIGGER_UI_PROTECTION_STATUS)
+        }.getOrElse { "FAILED: ${it.uiFailureMessage()}" }
     }
 
     private fun flushServiceLogs() {
@@ -963,7 +985,7 @@ internal fun GuardApp(
 ) {
     var showingLogs by rememberSaveable { mutableStateOf(false) }
     var appsQuery by rememberSaveable { mutableStateOf("") }
-    GuardNavigation { selectedTab ->
+    GuardNavigation { selectedTab, isRail ->
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val inlineSearch = maxWidth >= 600.dp && maxWidth > maxHeight
             Scaffold(
@@ -998,13 +1020,26 @@ internal fun GuardApp(
                     )
                 },
             ) { innerPadding ->
+                // With a rail, backgrounds reach the navigation bar. Keep its inset inside
+                // the scrollable content so the final controls remain above system gestures.
+                val direction = LocalLayoutDirection.current
+                val scrollBottomPadding = if (isRail) innerPadding.calculateBottomPadding() else 0.dp
+                val contentPadding = PaddingValues(
+                    start = innerPadding.calculateStartPadding(direction),
+                    top = innerPadding.calculateTopPadding(),
+                    end = innerPadding.calculateEndPadding(direction),
+                    bottom = if (isRail) 0.dp else innerPadding.calculateBottomPadding(),
+                )
                 when (selectedTab) {
                     GuardTab.HOME -> AdaptiveHomeLayout(
-                        modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+                        modifier = Modifier.padding(contentPadding).consumeWindowInsets(contentPadding),
                         supportingPane = {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp, top = 8.dp, end = 16.dp,
+                                    bottom = 8.dp + scrollBottomPadding,
+                                ),
                             ) {
                                 item {
                                     MilletNoRestrictCard(
@@ -1024,7 +1059,7 @@ internal fun GuardApp(
                                 start = 16.dp,
                                 top = 8.dp,
                                 end = 16.dp,
-                                bottom = 24.dp,
+                                bottom = 24.dp + scrollBottomPadding,
                             ),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
@@ -1068,7 +1103,8 @@ internal fun GuardApp(
                         query = appsQuery,
                         onQueryChanged = { appsQuery = it },
                         showSearchField = !inlineSearch,
-                        modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+                        modifier = Modifier.padding(contentPadding).consumeWindowInsets(contentPadding),
+                        bottomContentPadding = scrollBottomPadding,
                         onAppEnabledChanged = onAppEnabledChanged,
                         onAurogonChanged = onAurogonChanged,
                         onAutoUnstopChanged = onAutoUnstopChanged,
@@ -1398,11 +1434,24 @@ private fun MilletNoRestrictCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                stringResource(R.string.google_play_services_protection),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.google_play_services_protection),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = statusColor,
+                    textAlign = TextAlign.End,
+                )
+            }
             Text(
                 stringResource(R.string.millet_polling_frequency),
                 style = MaterialTheme.typography.labelLarge,
@@ -1456,7 +1505,6 @@ private fun MilletNoRestrictCard(
                     enabled = !state.applying,
                 )
             }
-            Text(status, style = MaterialTheme.typography.bodyMedium, color = statusColor)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1480,6 +1528,28 @@ private fun MilletNoRestrictCard(
                     checked = state.settings.nighttimeFcmProtectionEnabled,
                     onCheckedChange = onNighttimeFcmProtectionEnabledChanged,
                     enabled = !state.applying,
+                )
+            }
+            if (state.settings.nighttimeFcmProtectionEnabled) {
+                val nighttimeValue = state.nighttimeGameAllowlistValue
+                val nighttimeReadFailed = !state.shizuku.granted || nighttimeValue?.startsWith("FAILED:") == true
+                val nighttimeGmsPresent = !nighttimeReadFailed && GameAllowlist.containsGms(nighttimeValue)
+                Text(
+                    stringResource(
+                        when {
+                            nighttimeReadFailed -> R.string.gms_status_unavailable
+                            nighttimeValue == null -> R.string.gms_status_not_checked
+                            nighttimeGmsPresent -> R.string.gms_status_protected
+                            else -> R.string.gms_status_needs_attention
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        nighttimeReadFailed -> MaterialTheme.colorScheme.error
+                        nighttimeValue == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        nighttimeGmsPresent -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.error
+                    },
                 )
             }
             HorizontalDivider()

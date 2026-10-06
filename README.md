@@ -61,7 +61,7 @@ The app list contains non-system packages that declare a receiver for `com.googl
 - HyperOS Autostart: permits the process start when FCM delivery targets an app with no running process, such as after the process has been killed. In that case it works together with the Aurogon rule. It manages both Xiaomi Autostart AppOps.
 - AOSP battery optimization: mainly lets users suppress an app's background activity while keeping FCM unaffected. It applies Unrestricted, Optimized, or Restricted to the selected Android profiles.
 
-On first enable, Aurogon, Auto unstop, and Autostart management are turned on. WeChat and Telegram are enabled by default and start with battery optimization managed as **Optimized**; other discovered apps start disabled with battery management off.
+On first enable, Aurogon, Auto unstop, and Autostart management are turned on. Telegram is enabled by default and starts with battery optimization managed as **Optimized**; other discovered apps start disabled with battery management off.
 
 Disabling an app removes it from the managed Aurogon and Auto unstop sets while retaining its saved choices. If battery management was enabled, the app is changed to **Optimized** once. Its Autostart state is left unchanged.
 

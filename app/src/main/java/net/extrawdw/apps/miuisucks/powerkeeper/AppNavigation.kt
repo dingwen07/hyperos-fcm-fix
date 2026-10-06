@@ -26,7 +26,7 @@ internal enum class GuardTab : NavKey { HOME, APPS }
 /** Material chooses a bar or rail from window size and fold posture. Nav3 owns Back and state. */
 @Composable
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
-internal fun GuardNavigation(content: @Composable (GuardTab) -> Unit) {
+internal fun GuardNavigation(content: @Composable (GuardTab, isRail: Boolean) -> Unit) {
     val backStack = rememberNavBackStack(GuardTab.HOME)
     val currentContent = rememberUpdatedState(content)
     val selected = backStack.last()
@@ -37,6 +37,7 @@ internal fun GuardNavigation(content: @Composable (GuardTab) -> Unit) {
         !adaptiveInfo.windowPosture.isTabletop
     ) NavigationSuiteType.NavigationRail
     else NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(adaptiveInfo)
+    val currentIsRail = rememberUpdatedState(layoutType == NavigationSuiteType.NavigationRail)
     NavigationSuiteScaffold(
         layoutType = layoutType,
         navigationSuiteItems = {
@@ -60,7 +61,7 @@ internal fun GuardNavigation(content: @Composable (GuardTab) -> Unit) {
         NavDisplay(
             backStack = backStack,
             onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
-            entryProvider = { key -> NavEntry(key) { currentContent.value(key as GuardTab) } },
+            entryProvider = { key -> NavEntry(key) { currentContent.value(key as GuardTab, currentIsRail.value) } },
         )
     }
 }

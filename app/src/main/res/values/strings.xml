@@ -69,7 +69,7 @@
     <string name="fcm_reconnect_protection">FCM Connection Protection</string>
     <string name="fcm_reconnect_protection_description">Checks the FCM connection while monitoring is active and asks Google Play services to reconnect during periodic recovery.</string>
     <string name="nighttime_fcm_protection">Nighttime FCM protection (HyperOS 4)</string>
-    <string name="nighttime_fcm_protection_description">Experimental workaround for extra nighttime freezing of Google Play services on HyperOS 4. Keeps deep Doze enabled. Off by default; may increase battery use.</string>
+    <string name="nighttime_fcm_protection_description">Experimental workaround for extra freezing of Google Play services on HyperOS 4 at night (23:00–07:59). Enable it if you need to receive FCM messages during these hours. May increase battery use.</string>
     <string name="polling_interval_seconds">%1$ss</string>
     <string name="millet_no_restrict_description">Apps currently exempt from HyperOS background restrictions.</string>
     <string name="millet_no_restrict_empty">No packages in the list.</string>

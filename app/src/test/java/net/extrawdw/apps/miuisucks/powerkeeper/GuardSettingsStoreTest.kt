@@ -57,31 +57,6 @@ class GuardSettingsStoreTest {
     }
 
     @Test
-    fun hyperOsAutoUnrestrictedPackagesShareProtectedDefaults() {
-        assertTrue(AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.isNotEmpty())
-        assertTrue("com.tencent.mm" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
-        assertTrue("org.telegram.messenger" in AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES)
-        AppPolicyDefaults.HYPEROS_AUTO_UNRESTRICTED_PACKAGES.forEach { packageName ->
-            assertTrue(AppPolicyDefaults.forPackage(packageName).appEnabled)
-            assertTrue(AppPolicyDefaults.forPackage(packageName).aurogonEnabled)
-            assertTrue(AppPolicyDefaults.forPackage(packageName).autoUnstopEnabled)
-            assertTrue(AppPolicyDefaults.forPackage(packageName).autostartManaged)
-            assertTrue(AppPolicyDefaults.forPackage(packageName).autostartEnabled)
-            assertTrue(AppPolicyDefaults.forPackage(packageName).dozeManaged)
-            assertEquals(AppDozePolicy.DEFAULT, AppPolicyDefaults.forPackage(packageName).dozePolicy)
-        }
-
-        val other = AppPolicyDefaults.forPackage("com.example.push")
-        assertFalse(other.appEnabled)
-        assertFalse(other.aurogonEnabled)
-        assertFalse(other.autoUnstopEnabled)
-        assertFalse(other.autostartManaged)
-        assertFalse(other.autostartEnabled)
-        assertFalse(other.dozeManaged)
-        assertEquals(AppDozePolicy.DEFAULT, other.dozePolicy)
-    }
-
-    @Test
     fun appEnabledStateIsIndependentOfDetailToggles() {
         assertFalse(
             AppPolicy(

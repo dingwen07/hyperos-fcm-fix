@@ -225,6 +225,11 @@ object PrivilegedServiceClient {
             connectedService.getMilletNoRestrictValue(trigger)
         }
 
+    suspend fun getGameAllowlistValue(trigger: String): String =
+        withService("getGameAllowlistValue", trigger) { connectedService ->
+            connectedService.getGameAllowlistValue(trigger)
+        }
+
     suspend fun listAndroidUsers(trigger: String): String =
         withService("listAndroidUsers", trigger) { connectedService ->
             connectedService.listAndroidUsers(trigger)
